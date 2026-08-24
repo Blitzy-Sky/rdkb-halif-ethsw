@@ -19,7 +19,64 @@
 
 /**
  * @file ccsp_hal_ethsw.h
- * @brief Provides an interface for controlling and querying the state of Ethernet switches, including port configuration, VLAN management, bridging, statistics retrieval, and link aggregation.
+ * @brief Declares the Ethernet Switch (EthSW) HAL: port status and
+ * configuration, administrative state, MAC address-table aging, port lookup by
+ * MAC address, associated-device enumeration and notification, Ethernet WAN
+ * enable and port selection with provisioning callbacks, and per-port
+ * statistics.
+ *
+ * This header is the whole contract between RDK-B middleware, which calls the
+ * interface, and a vendor implementation, which provides it. The declared
+ * surface is exactly the following twenty functions:
+ *
+ * - Lifecycle: `CcspHalEthSwInit()`.
+ * - Port status and configuration: `CcspHalEthSwGetPortStatus()`,
+ *   `CcspHalEthSwGetPortCfg()`, `CcspHalEthSwSetPortCfg()`,
+ *   `CcspHalEthSwGetPortAdminStatus()`, `CcspHalEthSwSetPortAdminStatus()`.
+ * - Forwarding-table maintenance: `CcspHalEthSwSetAgingSpeed()`,
+ *   `CcspHalEthSwLocatePortByMacAddress()`.
+ * - Connected devices: `CcspHalExtSw_getAssociatedDevice()`,
+ *   `CcspHalExtSw_ethAssociatedDevice_callback_register()`.
+ * - Ethernet WAN: `CcspHalExtSw_ethPortConfigure()`,
+ *   `CcspHalExtSw_getEthWanEnable()`, `CcspHalExtSw_setEthWanEnable()`,
+ *   `CcspHalExtSw_getCurrentWanHWConf()`, `CcspHalExtSw_getEthWanPort()`,
+ *   `CcspHalExtSw_setEthWanPort()`, `GWP_RegisterEthWan_Callback()`,
+ *   `GWP_GetEthWanLinkStatus()`, `GWP_GetEthWanInterfaceName()`.
+ * - Statistics: `CcspHalEthSwGetEthPortStats()`.
+ *
+ * @note Interface scope. No VLAN creation or modification, bridging,
+ * link-aggregation, QoS or DSCP priority, ACL, or IGMP/MLD multicast control
+ * function is declared here, so no such capability is part of this contract.
+ * `eth_vlanid` in ::eth_device_t is a reported attribute of an observed device,
+ * not a VLAN-management entry point. [derived from the declarations in this
+ * file]
+ *
+ * @note Error reporting is a single channel. Every status-returning function in
+ * this interface returns only `RETURN_OK` or `RETURN_ERR`; the interface defines
+ * no error-code enumeration, so a caller cannot distinguish an invalid argument
+ * from a hardware or communication failure by the return value alone. A caller
+ * that needs to tell those cases apart must validate its own arguments before
+ * the call and consult the vendor log. Errors are reported synchronously as the
+ * return value. [`docs/pages/EthSWHAlSpec.md:133`; `RETURN_OK` and `RETURN_ERR`
+ * in this file]
+ *
+ * @note Threading. This interface is not thread safe: a module invoking it must
+ * serialise its own calls. [`docs/pages/EthSWHAlSpec.md:84`]
+ *
+ * @note Blocking. Implementations are required to complete synchronously and
+ * must not block or suspend the calling thread, because the interface is called
+ * from a single-threaded context. `CcspHalEthSwInit()` is the one documented
+ * exception. [`docs/pages/EthSWHAlSpec.md:116`, `:120`, `:79`]
+ *
+ * @note Persistence. This interface places no requirement on the vendor
+ * implementation to persist any setting across a restart, so a caller must
+ * re-apply configuration after re-initialisation rather than assume it
+ * survived. [`docs/pages/EthSWHAlSpec.md:141`]
+ *
+ * @note Diagnostics. Vendor logging is written to `ethsw_vendor_hal.log` in
+ * either `/var/tmp/` or `/rdklogs/logs/`, and the implementation is delivered as
+ * the shared library `libhal_ethsw.so`. [`docs/pages/EthSWHAlSpec.md:151`,
+ * `:180`]
  */
 
 #ifndef __CCSP_HAL_ETHSW_H__
@@ -46,77 +103,94 @@
                CONSTANT DEFINITIONS
 **********************************************************************/
 
-#define UP "up" /**!< Indicates that a network interface is up. */
-#define DOWN "down" /**!< Indicates that a network interface is down. */
+#define UP "up" /*!< String an implementation reports for an interface that is up; compare against it rather than against a locally spelled literal. */
+#define DOWN "down" /*!< String an implementation reports for an interface that is down; compare against it rather than against a locally spelled literal. */
+
+/**
+ * The seven type aliases below exist so that this header can be included by a
+ * translation unit that has no RDK-B platform type header available. Each is
+ * guarded, so the definition here is used only when the including unit has not
+ * already provided that name; where the platform does define it, the platform
+ * definition stands and this header adds nothing. A caller should therefore
+ * treat these as spellings of the underlying C types, not as distinct types.
+ */
 
 #ifndef ULONG
-#define ULONG unsigned long
+#define ULONG unsigned long /*!< Unsigned long used for array sizes and buffer lengths in this interface. */
 #endif
 
 #ifndef ULLONG
-#define ULLONG unsigned long long
+#define ULLONG unsigned long long /*!< Unsigned long long used for the 64-bit byte counters in ::CCSP_HAL_ETH_STATS. */
 #endif
 
 #ifndef CHAR
-#define CHAR  char
+#define CHAR  char /*!< Signed character type; declared for platform compatibility and not used by any declaration in this header. */
 #endif
 
 #ifndef UCHAR
-#define UCHAR unsigned char
+#define UCHAR unsigned char /*!< Unsigned character type, used for the MAC address octets in ::eth_device_t. */
 #endif
 
 #ifndef BOOLEAN
-#define BOOLEAN  UCHAR
+#define BOOLEAN  UCHAR /*!< Truth value carried as an unsigned char; set it from `TRUE` or `FALSE` and never assume any other value is accepted. */
 #endif
 
 #ifndef INT
-#define INT   int
+#define INT   int /*!< Signed integer type; the return type of every status-returning function declared here. */
 #endif
 
 #ifndef UINT
-#define UINT unsigned int
+#define UINT unsigned int /*!< Unsigned integer type, used for the Ethernet WAN port index. */
 #endif
 
 #ifndef TRUE
-#define TRUE     1
+#define TRUE     1 /*!< The true value for a `BOOLEAN` argument or output of this interface. */
 #endif
 
 #ifndef FALSE
-#define FALSE    0
+#define FALSE    0 /*!< The false value for a `BOOLEAN` argument or output of this interface. */
 #endif
 
 #ifndef ENABLE
-#define ENABLE   1
+#define ENABLE   1 /*!< Legacy enable constant. No declaration in this header takes or returns it, so a caller has no use for it; it is retained only so that including this header does not change the meaning of the name in a translation unit that expects it. */
 #endif
 
 #ifndef RETURN_OK
-#define RETURN_OK   0
+#define RETURN_OK   0 /*!< Success. The only value that indicates a status-returning function of this interface completed and honoured its post-conditions. */
 #endif
 
 #ifndef RETURN_ERR
-#define RETURN_ERR   -1
+#define RETURN_ERR   -1 /*!< Failure. The interface's only error value: it identifies that the operation failed but not why, so a caller cannot discriminate the cause from the return value. */
 #endif
 
 #ifndef ETHWAN_DEF_INTF_NUM
 
 /**
- *  @brief Default Ethernet WAN Interface Number
+ *  @brief Default Ethernet WAN interface index.
  *
- *  Defines the default physical interface number for the Ethernet WAN connection. This value is utilized by the Auto WAN feature in provisioning apps, the CCSP Eth Agent with Ethernet WAN Feature (`CcspHalExtSw_setEthWanPort()`), and the Eth WAN HAL.
+ *  Identifies the physical interface that the Auto WAN feature in provisioning
+ *  apps, the CCSP Ethernet Agent with the Ethernet WAN feature (see
+ *  `CcspHalExtSw_setEthWanPort()`) and the Ethernet WAN HAL use when no port has
+ *  been selected explicitly.
  *
- *  Note that Eth WAN HAL is 0-based, meaning the first physical port is represented by 0.
- * 
- *  The default interface is selected based on the following hardware configurations:
- *  * 6 Ethernet ports: Port 5 (index 5)
- *  * 4 Ethernet ports: Port 3 (index 3)
- *  * 2 Ethernet ports (modem-only support): Port 0 (index 0)
- *  * Otherwise (default): Port 0 (index 0)
+ *  The index is 0-based, so the first physical port is 0. This differs from
+ *  ::CCSP_HAL_ETHSW_PORT, whose enumerators start at 1; the two numbering
+ *  schemes are not interchangeable.
  *
- *  TODO: Transition to Dynamic Configuration
- *  - Consider moving away from compile-time configuration of the default Ethernet WAN interface.
- *  - Explore using runtime configuration mechanisms (e.g., configuration files, environment variables) to allow for more flexibility and easier customization.
+ *  The value is fixed when this header is compiled and is selected by the
+ *  first matching hardware-configuration macro:
+ *  * `ETH_6_PORTS` defined: 5
+ *  * `ETH_5_PORTS` defined: 4
+ *  * `ETH_4_PORTS` defined: 3
+ *  * `ETH_2_PORTS` and `MODEM_ONLY_SUPPORT` both defined: 0
+ *  * none of the above: 0
+ *
+ *  This interface provides no runtime override of the default: a caller that
+ *  needs a different Ethernet WAN port calls `CcspHalExtSw_setEthWanPort()`,
+ *  which changes the selected port and leaves this compile-time default
+ *  unchanged.
  */
-  
+
 #if defined (ETH_6_PORTS)
 #define ETHWAN_DEF_INTF_NUM 5
 #elif defined (ETH_5_PORTS)
@@ -126,7 +200,7 @@
 #elif defined (ETH_2_PORTS) && defined (MODEM_ONLY_SUPPORT)
 #define ETHWAN_DEF_INTF_NUM 0 
 #else
-/* Default to Physical Port #1 for ETH WAN */
+/* Default to the first physical port for Ethernet WAN. */
 #define ETHWAN_DEF_INTF_NUM 0
 #endif
 #endif
@@ -134,15 +208,22 @@
 #ifndef ETHWAN_INTERFACE_NAME_MAX_LENGTH 
 
 /**
- *  @brief Maximum Ethernet WAN Interface Name Length
- *  
- * Defines the maximum length of the interface name string returned by `GetEthWanInterfaceName`.
- * 
- * Note that the current implementation does not allow the caller to specify a buffer size, potentially leading to buffer overflow issues. 
+ *  @brief Maximum Ethernet WAN interface name length declared by this
+ *  interface.
  *
- * TODO: Update GetEthWanInterfaceName:
- *   - Modify the `GetEthWanInterfaceName` function to accept a buffer size parameter from the caller.
- *   - Implement appropriate error handling if the provided buffer is too small to accommodate the interface name.
+ * This is the only interface-name length bound this header declares, and it is
+ * the value a caller should size a `GWP_GetEthWanInterfaceName()` buffer
+ * against, passing the same size as that function's `maxSize` argument.
+ *
+ * @warning The interface is not self-consistent on this bound, and a caller
+ * must not assume the three statements agree. This macro declares 32; the
+ * `GWP_GetEthWanInterfaceName()` documentation describes `Interface` as a buffer
+ * of at least 64 bytes and constrains `maxSize` to an 11-to-262-byte range.
+ * Nothing in this interface reconciles the three, and no vendor-independent
+ * minimum or maximum can be derived from them. Sizing the buffer to this macro
+ * and passing that size as `maxSize` is the only choice grounded in a
+ * declaration; a caller needing a larger name must confirm the bound with the
+ * vendor implementation.
  */
 #define ETHWAN_INTERFACE_NAME_MAX_LENGTH 32
 #endif
@@ -151,124 +232,188 @@
                 ENUMERATION DEFINITIONS
 **********************************************************************/
 
-/**<! Represents the available ports on an Ethernet switch. */
- 
+/**
+ * @brief Identifies a port of the Ethernet switch.
+ *
+ * Every port-scoped function in this interface takes one of these enumerators
+ * as its `PortId` argument. The enumeration covers the switch's external
+ * Ethernet ports, its MoCA and WLAN ports, its processor-facing ports, its
+ * interconnect ports and its management port; which of them a given product
+ * actually implements is a property of that product, not of this interface, so a
+ * caller must be prepared for a valid enumerator to be rejected on hardware
+ * that has no such port.
+ *
+ * @note This enumeration is 1-based: `CCSP_HAL_ETHSW_EthPort1` is 1, so the
+ * external Ethernet ports occupy 1 through 8 and the remaining enumerators
+ * follow in declaration order. It is therefore not interchangeable with the
+ * 0-based Ethernet WAN port index used by `ETHWAN_DEF_INTF_NUM`,
+ * `CcspHalExtSw_getEthWanPort()`, `CcspHalExtSw_setEthWanPort()` and
+ * `eth_device_t::eth_port`, nor with the port number returned by
+ * `CcspHalEthSwLocatePortByMacAddress()`. Converting between the schemes is the
+ * caller's responsibility and this interface defines no mapping for it.
+ *
+ * @warning `CCSP_HAL_ETHSW_PortMax` is a count and sentinel, not a port: passing
+ * it to a port-scoped function is an invalid argument.
+ */
 typedef enum
 _CCSP_HAL_ETHSW_PORT
 {
-    CCSP_HAL_ETHSW_EthPort1  = 1,           /**< Ethernet port 1. */
-    CCSP_HAL_ETHSW_EthPort2,                /**< Ethernet port 2. */
-    CCSP_HAL_ETHSW_EthPort3,                /**< Ethernet port 3. */
-    CCSP_HAL_ETHSW_EthPort4,                /**< Ethernet port 4. */
-    CCSP_HAL_ETHSW_EthPort5,                /**< Ethernet port 5. */
-    CCSP_HAL_ETHSW_EthPort6,                /**< Ethernet port 6. */
-    CCSP_HAL_ETHSW_EthPort7,                /**< Ethernet port 7. */
-    CCSP_HAL_ETHSW_EthPort8,                /**< Ethernet port 8. */
+    CCSP_HAL_ETHSW_EthPort1  = 1,           /*!< External Ethernet port 1; the first external port, and the lowest valid value of this enumeration. */
+    CCSP_HAL_ETHSW_EthPort2,                /*!< External Ethernet port 2. */
+    CCSP_HAL_ETHSW_EthPort3,                /*!< External Ethernet port 3. */
+    CCSP_HAL_ETHSW_EthPort4,                /*!< External Ethernet port 4. */
+    CCSP_HAL_ETHSW_EthPort5,                /*!< External Ethernet port 5. */
+    CCSP_HAL_ETHSW_EthPort6,                /*!< External Ethernet port 6. */
+    CCSP_HAL_ETHSW_EthPort7,                /*!< External Ethernet port 7. */
+    CCSP_HAL_ETHSW_EthPort8,                /*!< External Ethernet port 8; the last external Ethernet port this enumeration names. */
 
-    CCSP_HAL_ETHSW_Moca1,                   /**< MoCA port 1. */
-    CCSP_HAL_ETHSW_Moca2,                   /**< MoCA port 2. */
+    CCSP_HAL_ETHSW_Moca1,                   /*!< Switch port facing the first MoCA interface. */
+    CCSP_HAL_ETHSW_Moca2,                   /*!< Switch port facing the second MoCA interface. */
 
-    CCSP_HAL_ETHSW_Wlan1,                   /**< WLAN port 1. */
-    CCSP_HAL_ETHSW_Wlan2,                   /**< WLAN port 2. */
-    CCSP_HAL_ETHSW_Wlan3,                   /**< WLAN port 3. */
-    CCSP_HAL_ETHSW_Wlan4,                   /**< WLAN port 4. */
+    CCSP_HAL_ETHSW_Wlan1,                   /*!< Switch port facing the first WLAN interface. */
+    CCSP_HAL_ETHSW_Wlan2,                   /*!< Switch port facing the second WLAN interface. */
+    CCSP_HAL_ETHSW_Wlan3,                   /*!< Switch port facing the third WLAN interface. */
+    CCSP_HAL_ETHSW_Wlan4,                   /*!< Switch port facing the fourth WLAN interface. */
 
-    CCSP_HAL_ETHSW_Processor1,              /**< Processor port 1. */
-    CCSP_HAL_ETHSW_Processor2,              /**< Processor port 2. */
+    CCSP_HAL_ETHSW_Processor1,              /*!< Internal switch port facing the first host processor. */
+    CCSP_HAL_ETHSW_Processor2,              /*!< Internal switch port facing the second host processor. */
 
-    CCSP_HAL_ETHSW_InterconnectPort1,       /**< Interconnect port 1. */
-    CCSP_HAL_ETHSW_InterconnectPort2,       /**< Interconnect port 2. */
+    CCSP_HAL_ETHSW_InterconnectPort1,       /*!< First port interconnecting this switch with another switch or SoC block. */
+    CCSP_HAL_ETHSW_InterconnectPort2,       /*!< Second port interconnecting this switch with another switch or SoC block. */
 
-    CCSP_HAL_ETHSW_MgmtPort,                /**!< Maximum number of ports (not a valid port value). */
-    CCSP_HAL_ETHSW_PortMax                  /**< Maximum number of ports. */
+    CCSP_HAL_ETHSW_MgmtPort,                /*!< The switch management port, which carries switch management traffic rather than subscriber traffic. */
+    CCSP_HAL_ETHSW_PortMax                  /*!< Count of the enumerators above and the exclusive upper bound of this enumeration; not itself a port and not a valid `PortId`. */
 }
-CCSP_HAL_ETHSW_PORT, *PCCSP_HAL_ETHSW_PORT;
+CCSP_HAL_ETHSW_PORT, *PCCSP_HAL_ETHSW_PORT; /*!< Pointer form of ::CCSP_HAL_ETHSW_PORT, provided for `[out]` parameters that return a port identifier. No function declared in this header currently takes it. */
 
-/* TODO: Evaluate if the pointer typedef (`_CCSP_HAL_ETHSW_PORT,*PCCSP_HAL_ETHSW_PORT`) are necessary. */
-
-/**!< Lists possible link rates for an Ethernet switch. */
+/**
+ * @brief Speed of an Ethernet switch port link.
+ *
+ * Returned by `CcspHalEthSwGetPortStatus()` as the rate the link is running at
+ * and by `CcspHalEthSwGetPortCfg()` as the rate the port is configured for, and
+ * accepted by `CcspHalEthSwSetPortCfg()` as the rate to configure. Which rates a
+ * port supports depends on the hardware, so a caller must handle
+ * `CcspHalEthSwSetPortCfg()` rejecting a rate this enumeration can express.
+ */
 typedef enum _CCSP_HAL_ETHSW_LINK_RATE {
-    CCSP_HAL_ETHSW_LINK_NULL = 0,  /**!< No link. */
-    CCSP_HAL_ETHSW_LINK_10Mbps,   /**!< 10 Mbps. */
-    CCSP_HAL_ETHSW_LINK_100Mbps,  /**!< 100 Mbps. */
-    CCSP_HAL_ETHSW_LINK_1Gbps,    /**!< 1 Gbps. */
-    CCSP_HAL_ETHSW_LINK_2_5Gbps,  /**!< 2.5 Gbps. */
-    CCSP_HAL_ETHSW_LINK_5Gbps,    /**!< 5 Gbps. */
-    CCSP_HAL_ETHSW_LINK_10Gbps,   /**!< 10 Gbps. */
-    CCSP_HAL_ETHSW_LINK_Auto     /**!< Automatic negotiation. */
-} CCSP_HAL_ETHSW_LINK_RATE, *PCCSP_HAL_ETHSW_LINK_RATE;
+    CCSP_HAL_ETHSW_LINK_NULL = 0,  /*!< No rate: reported when the port has no link established, and not a rate to configure. */
+    CCSP_HAL_ETHSW_LINK_10Mbps,   /*!< 10 Mbit/s. */
+    CCSP_HAL_ETHSW_LINK_100Mbps,  /*!< 100 Mbit/s. */
+    CCSP_HAL_ETHSW_LINK_1Gbps,    /*!< 1 Gbit/s. */
+    CCSP_HAL_ETHSW_LINK_2_5Gbps,  /*!< 2.5 Gbit/s. */
+    CCSP_HAL_ETHSW_LINK_5Gbps,    /*!< 5 Gbit/s. */
+    CCSP_HAL_ETHSW_LINK_10Gbps,   /*!< 10 Gbit/s. */
+    CCSP_HAL_ETHSW_LINK_Auto     /*!< Auto-negotiate the rate. Set this to let the port negotiate; a get returns the negotiated rate rather than this value once a link is up. */
+} CCSP_HAL_ETHSW_LINK_RATE, *PCCSP_HAL_ETHSW_LINK_RATE; /*!< Pointer form of ::CCSP_HAL_ETHSW_LINK_RATE; this is the type of the `pLinkRate` `[out]` parameter of `CcspHalEthSwGetPortStatus()` and `CcspHalEthSwGetPortCfg()`. */
 
-/* TODO: Evaluate if the pointer typedef (`_CCSP_HAL_ETHSW_LINK_RATE, *PCCSP_HAL_ETHSW_LINK_RATE`) are necessary. */
-
-/**! Lists possible duplex modes for an Ethernet switch. */
+/**
+ * @brief Duplex mode of an Ethernet switch port.
+ *
+ * Returned by `CcspHalEthSwGetPortStatus()` and `CcspHalEthSwGetPortCfg()`, and
+ * accepted by `CcspHalEthSwSetPortCfg()`.
+ */
 typedef enum _CCSP_HAL_ETHSW_DUPLEX_MODE
 {
-    CCSP_HAL_ETHSW_DUPLEX_Auto = 0, /**!< Automatic duplex mode (negotiated). */
-    CCSP_HAL_ETHSW_DUPLEX_Half,     /**!< Half duplex mode (one direction at a time). */
-    CCSP_HAL_ETHSW_DUPLEX_Full      /**!< Full duplex mode (both directions simultaneously). */
-} CCSP_HAL_ETHSW_DUPLEX_MODE, *PCCSP_HAL_ETHSW_DUPLEX_MODE;
-/*
-* TODO:  Evaluate if the pointer typedef (`CCSP_HAL_ETHSW_DUPLEX_MODE  & *PCCSP_HAL_ETHSW_DUPLEX_MODE`) is necessary.
-*/ 
+    CCSP_HAL_ETHSW_DUPLEX_Auto = 0, /*!< Auto-negotiate the duplex mode; a get returns the negotiated mode rather than this value once a link is up. */
+    CCSP_HAL_ETHSW_DUPLEX_Half,     /*!< Half duplex: the port transmits or receives, but not both at once. */
+    CCSP_HAL_ETHSW_DUPLEX_Full      /*!< Full duplex: the port transmits and receives simultaneously. */
+} CCSP_HAL_ETHSW_DUPLEX_MODE, *PCCSP_HAL_ETHSW_DUPLEX_MODE; /*!< Pointer form of ::CCSP_HAL_ETHSW_DUPLEX_MODE; this is the type of the `pDuplexMode` `[out]` parameter of `CcspHalEthSwGetPortStatus()` and `CcspHalEthSwGetPortCfg()`. */
 
-/**! Indicates the status of an Ethernet switch link. */
+/**
+ * @brief Operational link state of an Ethernet switch port.
+ *
+ * Returned by `CcspHalEthSwGetPortStatus()`. This interface reports the state as
+ * a value and does not define which transitions between these values are legal
+ * or in what order they occur, so a caller must poll for the state it needs
+ * rather than infer a sequence.
+ */
 typedef enum _CCSP_HAL_ETHSW_LINK_STATUS
 {
-    CCSP_HAL_ETHSW_LINK_Up = 0,         /**!< Link is up. */
-    CCSP_HAL_ETHSW_LINK_Down,           /**!< Link is down. */
-    CCSP_HAL_ETHSW_LINK_Disconnected   /**!< Link is disconnected. */
-} CCSP_HAL_ETHSW_LINK_STATUS, *PCCSP_HAL_ETHSW_LINK_STATUS;
+    CCSP_HAL_ETHSW_LINK_Up = 0,         /*!< A link is established and the port can carry traffic. */
+    CCSP_HAL_ETHSW_LINK_Down,           /*!< No link is established although a peer may be attached. */
+    CCSP_HAL_ETHSW_LINK_Disconnected   /*!< Nothing is attached to the port. */
+} CCSP_HAL_ETHSW_LINK_STATUS, *PCCSP_HAL_ETHSW_LINK_STATUS; /*!< Pointer form of ::CCSP_HAL_ETHSW_LINK_STATUS; this is the type of the `pStatus` `[out]` parameter of `CcspHalEthSwGetPortStatus()`. */
 
-/*
-* TODO: Evaluate if the pointer typedef (`_CCSP_HAL_ETHSW_LINK_STATUS & *PCCSP_HAL_ETHSW_LINK_STATUS`) is necessary.
-*/ 
-
-/**! Represents the administrative status of an Ethernet switch. */
+/**
+ * @brief Administrative state of an Ethernet switch port.
+ *
+ * The administrative state is the state an operator has requested, which is
+ * independent of whether a link is actually up: a port may be administratively
+ * up with ::CCSP_HAL_ETHSW_LINK_Down reported by `CcspHalEthSwGetPortStatus()`.
+ * Read with `CcspHalEthSwGetPortAdminStatus()` and set with
+ * `CcspHalEthSwSetPortAdminStatus()`.
+ */
 typedef enum _CCSP_HAL_ETHSW_ADMIN_STATUS {
-    CCSP_HAL_ETHSW_AdminUp = 0,   /**!< Admin status is up (enabled). */
-    CCSP_HAL_ETHSW_AdminDown,     /**!< Admin status is down (disabled). */
-    CCSP_HAL_ETHSW_AdminTest      /**!< Admin status is in test mode. */ 
-} CCSP_HAL_ETHSW_ADMIN_STATUS, *PCCSP_HAL_ETHSW_ADMIN_STATUS;
-
-/* 
-* TODO: Evaluate if the typedef (`_CCSP_HAL_ETHSW_ADMIN_STATUS & *PCCSP_HAL_ETHSW_ADMIN_STATUS`) is necessary.
-*/
+    CCSP_HAL_ETHSW_AdminUp = 0,   /*!< The port is administratively enabled and permitted to establish a link. */
+    CCSP_HAL_ETHSW_AdminDown,     /*!< The port is administratively disabled and will not establish a link. */
+    CCSP_HAL_ETHSW_AdminTest      /*!< The port is in a vendor-defined test mode. This interface does not specify the behaviour of a port in this state, so a caller must not assume it forwards traffic. */ 
+} CCSP_HAL_ETHSW_ADMIN_STATUS, *PCCSP_HAL_ETHSW_ADMIN_STATUS; /*!< Pointer form of ::CCSP_HAL_ETHSW_ADMIN_STATUS; this is the type of the `pAdminStatus` `[out]` parameter of `CcspHalEthSwGetPortAdminStatus()`. */
 
 /**********************************************************************
                 STRUCTURE DEFINITIONS
 **********************************************************************/
 
-/**! Represents Ethernet port statistics. */
+/**
+ * @brief Traffic and error counters for one Ethernet switch port.
+ *
+ * Filled in by `CcspHalEthSwGetEthPortStats()` into storage the caller owns.
+ *
+ * @note This interface does not specify the unit of any counter beyond the
+ * byte-or-packet distinction the member names carry, nor whether a counter is a
+ * total since the port last started or a value over some shorter window, nor how
+ * it wraps at the width of its type. It defines no way to reset a counter. A
+ * caller that needs a rate must therefore take two samples and divide by its own
+ * elapsed time, and must tolerate a counter that wraps or restarts.
+ */
 typedef struct _CCSP_HAL_ETH_STATS {
-    ULLONG BytesSent;           /**!< Number of bytes sent. */
-    ULLONG BytesReceived;        /**!< Number of bytes received. */
-    ULONG PacketsSent;          /**!< Number of packets sent. */
-    ULONG PacketsReceived;       /**!< Number of packets received. */
-    ULONG ErrorsSent;           /**!< Number of errors sent. */
-    ULONG ErrorsReceived;        /**!< Number of errors received. */
-    ULONG UnicastPacketsSent;   /**!< Number of unicast packets sent. */
-    ULONG UnicastPacketsReceived; /**!< Number of unicast packets received. */
-    ULONG DiscardPacketsSent;    /**!< Number of discarded packets sent. */
-    ULONG DiscardPacketsReceived; /**!< Number of discarded packets received. */
-    ULONG MulticastPacketsSent;  /**!< Number of multicast packets sent. */
-    ULONG MulticastPacketsReceived; /**!< Number of multicast packets received. */
-    ULONG BroadcastPacketsSent;   /**!< Number of broadcast packets sent. */
-    ULONG BroadcastPacketsReceived; /**!< Number of broadcast packets received. */
-    ULONG UnknownProtoPacketsReceived; /**!< Number of packets received with unknown protocols. */
-} CCSP_HAL_ETH_STATS,*PCCSP_HAL_ETH_STATS;
-
-/* 
-* TODO: Evaluate if the typedef  `_CCSP_HAL_ETH_STATS & *PCCSP_HAL_ETH_STATS` is necessary.
-*   - Verify and document the specific units for each statistic (e.g., bytes, packets, errors per second or total).
-*/
+    ULLONG BytesSent;           /*!< Bytes transmitted on the port. */
+    ULLONG BytesReceived;        /*!< Bytes received on the port. */
+    ULONG PacketsSent;          /*!< Packets transmitted on the port. */
+    ULONG PacketsReceived;       /*!< Packets received on the port. */
+    ULONG ErrorsSent;           /*!< Outbound packets not transmitted because of an error. */
+    ULONG ErrorsReceived;        /*!< Inbound packets that contained an error. */
+    ULONG UnicastPacketsSent;   /*!< Packets transmitted to a single destination address. */
+    ULONG UnicastPacketsReceived; /*!< Packets received that were addressed to a single destination. */
+    ULONG DiscardPacketsSent;    /*!< Outbound packets discarded although no error was detected, for example because a queue was full. */
+    ULONG DiscardPacketsReceived; /*!< Inbound packets discarded although no error was detected. */
+    ULONG MulticastPacketsSent;  /*!< Packets transmitted to a multicast address. */
+    ULONG MulticastPacketsReceived; /*!< Packets received that were addressed to a multicast address. */
+    ULONG BroadcastPacketsSent;   /*!< Packets transmitted to the broadcast address. */
+    ULONG BroadcastPacketsReceived; /*!< Packets received that were addressed to the broadcast address. */
+    ULONG UnknownProtoPacketsReceived; /*!< Packets received carrying a protocol the port does not recognise. */
+} CCSP_HAL_ETH_STATS,*PCCSP_HAL_ETH_STATS; /*!< Pointer form of ::CCSP_HAL_ETH_STATS; this is the type of the `pStats` `[out]` parameter of `CcspHalEthSwGetEthPortStats()`. */
 
 /**
  * @}
  */
 
 
+
 /**
  * @addtogroup ETHSW_HAL_APIS
+ * @brief Functions a caller invokes to query and control the Ethernet switch.
+ *
+ * Four conventions hold for every function in this group, and are stated here
+ * once rather than repeated in full on each declaration.
+ *
+ * - Ordering. `CcspHalEthSwInit()` is called once during bootup and must
+ *   precede every other function of this interface.
+ *   [`docs/pages/EthSWHAlSpec.md:78`]
+ * - Result. A status-returning function reports success as `RETURN_OK` and any
+ *   failure as `RETURN_ERR`, synchronously, as its return value. Because that is
+ *   the interface's only error value, the cause of a failure cannot be recovered
+ *   from the return value; a caller distinguishes an argument mistake from a
+ *   hardware fault by validating its own arguments first and otherwise consults
+ *   `ethsw_vendor_hal.log`. [`docs/pages/EthSWHAlSpec.md:133`, `:151`]
+ * - Concurrency. This interface is not thread safe, so a caller serialises its
+ *   own calls; separate processes may call it concurrently, and the vendor
+ *   implementation is required to protect itself against that.
+ *   [`docs/pages/EthSWHAlSpec.md:84`, `:90`]
+ * - Memory. Storage exchanged across this interface is allocated and released by
+ *   the caller, except where a declaration states otherwise;
+ *   `CcspHalExtSw_getAssociatedDevice()` is the one such exception.
+ *   [`docs/pages/EthSWHAlSpec.md:96`]
+ *
  * @{
  */
 
@@ -279,41 +424,72 @@ typedef struct _CCSP_HAL_ETH_STATS {
 **********************************************************************************/
 
 
-/*
- * TODO (Enhance Error Reporting):
- *   - Replace generic `RETURN_ERR` with an enumerated error code type for improved clarity and debugging.
- *   - Define specific error codes to pinpoint various failure scenarios, including:
- *       - Invalid input parameters (e.g., null pointers, out-of-range values)
- *       - Resource allocation failures (e.g., out-of-memory)
- *       - Communication or timeout issues with external systems (e.g., Ethernet switch)
- *       - Internal errors within the HAL
- *   - Document the new error codes thoroughly in the header file and any relevant guides.
- */
-
-/**!
- * @brief Initializes the Ethernet Switch (EthSW) HAL.
+/**
+ * @brief Prepares the Ethernet switch and the HAL for use.
  *
- * This function sets up the necessary resources and configurations for the EthSW HAL to function.
+ * Sets up the data structures, threads and hardware access that every other
+ * function of this interface depends on. A caller invokes this once during
+ * bootup and before any other EthSW HAL function; the interface does not define
+ * a teardown counterpart, and does not define the effect of calling this
+ * function a second time.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On successful initialization.
- * @retval RETURN_ERR - On failure (check for specific error details).
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The HAL is initialised and the rest of this interface may
+ * now be called.
+ * @retval RETURN_ERR - Initialisation failed, for example because the switch
+ * hardware could not be reached or a resource could not be acquired.
+ *
+ * @note Error handling: on `RETURN_ERR` a caller must not proceed to any other
+ * function of this interface, because none of them is defined without a
+ * successful initialisation. The value does not say which resource failed, so
+ * recovery is limited to retrying and reporting the failure.
+ * @note Blocking: this is the one function of this interface that is documented
+ * as able to block, and it may do so while the switch hardware is not yet ready.
+ * A caller must not invoke it from a context that cannot tolerate a delay.
+ * [`docs/pages/EthSWHAlSpec.md:79`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwInit(void); 
 
-/**!
- * @brief Retrieves the status information for a specified Ethernet switch port.
+/**
+ * @brief Reads the live link rate, duplex mode and link state of one switch
+ * port.
  *
- * This function fetches the link rate, duplex mode, and link status of the given port.
+ * Reports what the port has actually negotiated, which is not necessarily what
+ * it was configured for: use `CcspHalEthSwGetPortCfg()` for the configured
+ * values.
  *
- * @param[in] PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[out] pLinkRate - Pointer to a `CCSP_HAL_ETHSW_LINK_RATE` variable to store the link rate.
- * @param[out] pDuplexMode - Pointer to a `CCSP_HAL_ETHSW_DUPLEX_MODE` variable to store the duplex mode.
- * @param[out] pStatus - Pointer to a `CCSP_HAL_ETHSW_LINK_STATUS` variable to store the link status.
+ * @param[in] PortId - Port to query. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax, which is a sentinel.
+ * Whether a given enumerator is implemented depends on the product.
+ * @param[out] pLinkRate - Caller-allocated ::CCSP_HAL_ETHSW_LINK_RATE the
+ * negotiated rate is written to; ::CCSP_HAL_ETHSW_LINK_NULL when the port has no
+ * link. Must not be NULL.
+ * @param[out] pDuplexMode - Caller-allocated ::CCSP_HAL_ETHSW_DUPLEX_MODE the
+ * negotiated duplex mode is written to. Must not be NULL.
+ * @param[out] pStatus - Caller-allocated ::CCSP_HAL_ETHSW_LINK_STATUS the link
+ * state is written to. Must not be NULL.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, retrieval error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` all three outputs have been written. On `RETURN_ERR` this
+ * interface does not define whether any of them was written, so a caller treats
+ * all three as unset.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The three values were read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `PortId` names no
+ * implemented port, an output pointer was NULL, or the switch could not be
+ * queried.
+ *
+ * @note Error handling: a caller re-checks that `PortId` is an implemented port
+ * and that no pointer is NULL, then retries or reports; the return value does not
+ * separate an invalid argument from a hardware failure.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwGetPortStatus (
     CCSP_HAL_ETHSW_PORT PortId, 
@@ -322,18 +498,37 @@ INT CcspHalEthSwGetPortStatus (
     PCCSP_HAL_ETHSW_LINK_STATUS pStatus
 );
 
-/**!
- * @brief Retrieves the configuration of a specified Ethernet switch port.
+/**
+ * @brief Reads the configured link rate and duplex mode of one switch port.
  *
- * This function fetches the configured link rate and duplex mode of the given port.
+ * Reports the values the port is set to, which may be the auto-negotiation
+ * enumerators ::CCSP_HAL_ETHSW_LINK_Auto and ::CCSP_HAL_ETHSW_DUPLEX_Auto even
+ * where `CcspHalEthSwGetPortStatus()` reports a concrete negotiated result.
  *
- * @param[in]  PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[out] pLinkRate - Pointer to a `CCSP_HAL_ETHSW_LINK_RATE` variable to store the link rate.
- * @param[out] pDuplexMode - Pointer to a `CCSP_HAL_ETHSW_DUPLEX_MODE` variable to store the duplex mode.
+ * @param[in]  PortId - Port to query. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[out] pLinkRate - Caller-allocated ::CCSP_HAL_ETHSW_LINK_RATE the
+ * configured rate is written to. Must not be NULL.
+ * @param[out] pDuplexMode - Caller-allocated ::CCSP_HAL_ETHSW_DUPLEX_MODE the
+ * configured duplex mode is written to. Must not be NULL.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, retrieval error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` both outputs have been written. On `RETURN_ERR` neither is
+ * defined and a caller treats both as unset.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - Both values were read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `PortId` names no
+ * implemented port, an output pointer was NULL, or the switch could not be
+ * queried.
+ *
+ * @note Error handling: as for `CcspHalEthSwGetPortStatus()` - re-check the
+ * arguments, then retry or report.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwGetPortCfg (
     CCSP_HAL_ETHSW_PORT PortId, 
@@ -341,16 +536,44 @@ INT CcspHalEthSwGetPortCfg (
     PCCSP_HAL_ETHSW_DUPLEX_MODE pDuplexMode
 );
 
-/**!
- * @brief Configures the link rate and duplex mode for a specific Ethernet switch port.
+/**
+ * @brief Sets the link rate and duplex mode of one switch port.
  *
- * @param[in] PortId - Identifier of the Ethernet switch port to configure (see `CCSP_HAL_ETHSW_PORT`).
- * @param[in] LinkRate - Desired link rate (see `CCSP_HAL_ETHSW_LINK_RATE`).
- * @param[in] DuplexMode - Desired duplex mode (see `CCSP_HAL_ETHSW_DUPLEX_MODE`).
+ * Both values are applied together; this interface offers no way to change one
+ * and leave the other untouched, so a caller that wants to preserve one reads
+ * the current pair with `CcspHalEthSwGetPortCfg()` first and passes it back.
+ * Applying a configuration may drop and re-establish the port's link.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, invalid configuration values).
+ * @param[in] PortId - Port to configure. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[in] LinkRate - Rate to configure; any enumerator of
+ * ::CCSP_HAL_ETHSW_LINK_RATE, subject to what the port supports.
+ * ::CCSP_HAL_ETHSW_LINK_NULL is a reported state rather than a rate to set.
+ * @param[in] DuplexMode - Duplex mode to configure; any enumerator of
+ * ::CCSP_HAL_ETHSW_DUPLEX_MODE.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the port is configured for the requested rate and duplex
+ * mode. The link itself may still be down, and
+ * `CcspHalEthSwGetPortStatus()` may report a different negotiated result. On
+ * `RETURN_ERR` this interface does not define whether the port kept its previous
+ * configuration, so a caller reads it back before relying on it.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The configuration was accepted and applied.
+ * @retval RETURN_ERR - The configuration was rejected, for example because
+ * `PortId` names no implemented port, the port does not support the requested
+ * rate or duplex mode, or the switch could not be programmed.
+ *
+ * @note Error handling: a caller re-reads the configuration with
+ * `CcspHalEthSwGetPortCfg()` to learn the state it is actually in, and falls back
+ * to ::CCSP_HAL_ETHSW_LINK_Auto and ::CCSP_HAL_ETHSW_DUPLEX_Auto if a specific
+ * combination is refused.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwSetPortCfg(
     CCSP_HAL_ETHSW_PORT PortId,
@@ -358,92 +581,187 @@ INT CcspHalEthSwSetPortCfg(
     CCSP_HAL_ETHSW_DUPLEX_MODE DuplexMode
 );
 
-/**!
- * @brief Retrieves the administrative status of a specified Ethernet switch port.
+/**
+ * @brief Reads whether a switch port is administratively enabled.
  *
- * @param[in] PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[out] pAdminStatus - Pointer to a `CCSP_HAL_ETHSW_ADMIN_STATUS` variable to store the admin status.
+ * Reports the state an operator has requested, which is independent of whether
+ * a link is up; `CcspHalEthSwGetPortStatus()` reports the latter.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, retrieval error).
+ * @param[in] PortId - Port to query. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[out] pAdminStatus - Caller-allocated ::CCSP_HAL_ETHSW_ADMIN_STATUS the
+ * administrative state is written to. Must not be NULL.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `*pAdminStatus` has been written; on `RETURN_ERR` it is
+ * undefined and a caller treats it as unset.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The administrative state was read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `PortId` names no
+ * implemented port, `pAdminStatus` was NULL, or the switch could not be queried.
+ *
+ * @note Error handling: re-check the arguments, then retry or report; the value
+ * does not identify the cause.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwGetPortAdminStatus (
     CCSP_HAL_ETHSW_PORT PortId, 
     PCCSP_HAL_ETHSW_ADMIN_STATUS pAdminStatus
 );
 
-/**!
- * @brief Sets the administrative status of a specific Ethernet switch port.
+/**
+ * @brief Administratively enables, disables or test-mode-switches one port.
  *
- * @param[in] PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[in] AdminStatus - New administrative status (0: Down, 1: Up).
+ * Disabling a port takes its link down and stops it forwarding traffic;
+ * enabling it permits a link to be established again.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, invalid admin status value).
+ * @param[in] PortId - Port to change. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[in] AdminStatus - State to apply: ::CCSP_HAL_ETHSW_AdminUp,
+ * ::CCSP_HAL_ETHSW_AdminDown or ::CCSP_HAL_ETHSW_AdminTest. Pass the enumerator
+ * itself rather than a numeric literal, because the enumeration's ordering is
+ * `AdminUp` first, which is the reverse of the up-is-one convention a caller
+ * might otherwise assume.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the port is in the requested administrative state, and a
+ * subsequent `CcspHalEthSwGetPortAdminStatus()` reports it. On `RETURN_ERR` this
+ * interface does not define whether the previous state was retained.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The state was applied.
+ * @retval RETURN_ERR - The change was rejected, for example because `PortId`
+ * names no implemented port, `AdminStatus` is not an enumerator of
+ * ::CCSP_HAL_ETHSW_ADMIN_STATUS, or the switch could not be programmed.
+ *
+ * @note Error handling: a caller reads the state back with
+ * `CcspHalEthSwGetPortAdminStatus()` rather than assuming the port is unchanged.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwSetPortAdminStatus(
     CCSP_HAL_ETHSW_PORT PortId,
     CCSP_HAL_ETHSW_ADMIN_STATUS AdminStatus
 ); 
 
-/**!
- * @brief Sets the aging speed for the specified Ethernet switch port.
+/**
+ * @brief Sets how quickly a port ages MAC addresses out of the forwarding
+ * table.
  *
- * This function configures the aging speed for a given port on the Ethernet switch. The aging speed determines how long a MAC address entry remains in the switch's forwarding table without receiving traffic.
+ * The aging speed governs how long a learned MAC address survives in the
+ * switch's forwarding table without further traffic from it. A shorter lifetime
+ * makes the table follow a moving client sooner; a longer one reduces flooding.
  *
- * @param[in] PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[in] AgingSpeed - New aging speed value (vendor-specific).
+ * @param[in] PortId - Port to configure. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[in] AgingSpeed - Aging speed to apply. This interface does not specify
+ * the unit, the valid range or the meaning of zero or a negative value: the
+ * quantity is vendor-defined, so a caller must obtain an acceptable value from
+ * the vendor implementation rather than assume seconds, and must handle the call
+ * being rejected.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, invalid aging speed value).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the port uses the requested aging speed. This interface
+ * provides no way to read the value back, so the applied setting cannot be
+ * confirmed through it.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The aging speed was accepted and applied.
+ * @retval RETURN_ERR - The change was rejected, for example because `PortId`
+ * names no implemented port, `AgingSpeed` is outside the range the
+ * implementation accepts, or the switch could not be programmed.
+ *
+ * @note Error handling: because the accepted range is not part of this
+ * interface, a caller treats `RETURN_ERR` as "this value is not usable here",
+ * reports it, and does not retry the same value.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwSetAgingSpeed(CCSP_HAL_ETHSW_PORT PortId, INT AgingSpeed); 
 
-/**!
- * @brief Locates the port associated with a given MAC address on a MoCA or Ethernet switch.
+/**
+ * @brief Finds which port a given MAC address was learned on.
  *
- * This function searches for a specific MAC address in the MoCA or Ethernet switch's MAC address tables.
+ * Searches the switch's MoCA and Ethernet MAC address tables for the supplied
+ * address and reports the port it is associated with. Only an address the switch
+ * has learned can be found, so an idle or newly attached client may be absent.
  *
- * @param[in] mac - Pointer to a 6-byte array containing the MAC address (e.g., "00:1A:2B:11:B2:33").
- * @param[out] port - Pointer to an integer where the port number will be stored:
- *                   - 0: MoCA port
- *                   - 1-4: Ethernet port
+ * @param[in] mac - Pointer to exactly 6 bytes holding the MAC address as binary
+ * octets, not as a printable string. The callee reads the buffer and does not
+ * modify it; this interface does not state whether the callee retains the
+ * pointer, so a caller keeps the buffer valid for the duration of the call and
+ * must not assume it may be freed earlier. The interface does not specify the
+ * octet order, so a caller must confirm it against the vendor implementation
+ * rather than assume a byte reversal either way. Must not be NULL.
+ * @param[out] port - Caller-allocated `INT` the port number is written to. Must
+ * not be NULL.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success (MAC address found and port stored in `port`).
- * @retval RETURN_ERR - On failure (e.g., MAC address not found, invalid input parameters).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `*port` holds the port the address was found on; on
+ * `RETURN_ERR` it is undefined and a caller treats it as unset.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The address was found and the port number was stored.
+ * @retval RETURN_ERR - The lookup failed, for example because the address is not
+ * in any table, a pointer was NULL, or the tables could not be read.
+ *
+ * @warning The number written to `*port` is not a ::CCSP_HAL_ETHSW_PORT
+ * enumerator. This interface does not define the numbering it uses, does not
+ * define which value denotes a MoCA rather than an Ethernet port, and defines no
+ * conversion to ::CCSP_HAL_ETHSW_PORT. A caller must therefore not pass the
+ * value to a port-scoped function of this interface, and must establish its
+ * meaning with the vendor implementation before acting on it.
+ *
+ * @note Error handling: `RETURN_ERR` does not distinguish "not present" from a
+ * read failure, so a caller that needs that distinction re-reads the device list
+ * with `CcspHalExtSw_getAssociatedDevice()` instead of inferring it here.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwLocatePortByMacAddress(unsigned char *mac, INT *port);
-
-/** Ethernet HAL Callback for Client Association/Disassociation Notifications */
 
 /**
  * @}
  */
+
 
 /**
  * @addtogroup ETHSW_HAL_TYPES
  * @{
  */
 
-/**! Represents details of an Ethernet device connected to a switch port. */
+/**
+ * @brief One device observed on an Ethernet switch port.
+ *
+ * Returned in the array `CcspHalExtSw_getAssociatedDevice()` produces, and
+ * passed by pointer to a ::CcspHalExtSw_ethAssociatedDevice_callback when a
+ * device associates or disassociates. Every member is an observation reported by
+ * the implementation; writing to a structure a caller has received changes
+ * nothing in the switch, because this interface defines no function that accepts
+ * one.
+ */
 typedef struct _eth_device {
-    UCHAR eth_devMacAddress[6];  /**!< MAC address (e.g., "00:1A:2B:11:B2:33"). */
-    INT eth_port;               /**!< External port the device is attached to (0 to MaxEthPort-1). */
-    INT eth_vlanid;             /**!< VLAN ID the port is tagged with (1 to 4094). */
-    INT eth_devTxRate;          /**!< Transmit speed (vendor-specific). */
-    INT eth_devRxRate;          /**!< Receive speed (vendor-specific). */
-    BOOLEAN eth_Active;         /**!< Indicates if the device is online (true) or offline (false). */
+    UCHAR eth_devMacAddress[6];  /*!< MAC address of the device as 6 binary octets, not a printable string. The interface does not specify the octet order. */
+    INT eth_port;               /*!< External port the device is attached to. This is not a ::CCSP_HAL_ETHSW_PORT enumerator: this interface defines neither the numbering base nor the upper bound of this index, and defines no conversion to ::CCSP_HAL_ETHSW_PORT, so a caller must not pass it to a port-scoped function of this interface. */
+    INT eth_vlanid;             /*!< VLAN identifier the port is tagged with, in the range 1 to 4094. Reported for information only; this interface declares no function that creates, deletes or modifies a VLAN. */
+    INT eth_devTxRate;          /*!< Transmit rate observed for the device. The unit is not specified by this interface and is vendor-defined, so a caller must not assume Mbit/s or any other scale, and must not compare the value across implementations. */
+    INT eth_devRxRate;          /*!< Receive rate observed for the device. The unit is not specified by this interface and is vendor-defined, on the same terms as `eth_devTxRate`. */
+    BOOLEAN eth_Active;         /*!< `TRUE` while the device is present on the port, `FALSE` once it is no longer seen. In a callback delivery this member is what distinguishes an association from a disassociation. */
 } eth_device_t;
-
-/*
-* TODO:
-*   - Document the units for `eth_devTxRate` and `eth_devRxRate` (e.g., Mbps).
-*   - Evaluate `_eth_device` for removal since typedef is used it's optional and not required.
-*/
 
 /**
  * @}
@@ -455,144 +773,376 @@ typedef struct _eth_device {
  * @{
  */
 
-/**!
- * @brief Retrieves information about associated Ethernet devices.
+/**
+ * @brief Enumerates the devices currently seen on the switch's Ethernet ports.
  *
- * This function populates an array with details of connected devices and returns the array size.
+ * Produces a snapshot: an array of ::eth_device_t and its element count. The
+ * contents are accurate only as of the call, so a caller that needs to track
+ * arrivals and departures registers a callback with
+ * `CcspHalExtSw_ethAssociatedDevice_callback_register()` rather than polling this
+ * function.
  *
- * **Important:** The HAL allocates memory for the device array (`output_struct`). The caller is responsible for freeing this memory.
+ * @param[out] output_array_size - Caller-allocated `ULONG` the number of
+ * elements written to the array is stored in. Must not be NULL. A successful call
+ * may report zero, which means no device is currently associated.
+ * @param[out] output_struct - Caller-allocated pointer variable. On success the
+ * implementation stores in it the address of an array of `*output_array_size`
+ * ::eth_device_t elements that the implementation itself allocated. Must not be
+ * NULL.
  *
- * @param[out] output_array_size - Pointer to an unsigned long integer where the size of the array will be stored.
- * @param[out] output_struct - Pointer to an array of `eth_device_t` structures to be populated with device details.
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `*output_array_size` holds the element count and
+ * `*output_struct` points to an array the caller now owns. On `RETURN_ERR`
+ * neither output is defined: a caller must not read either of them and in
+ * particular must not release `*output_struct`.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., null pointers, memory allocation issues, or retrieval errors).
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The snapshot was produced and both outputs were written.
+ * @retval RETURN_ERR - The enumeration failed, for example because an output
+ * pointer was NULL, the array could not be allocated, or the device tables could
+ * not be read.
+ *
+ * @warning Ownership is inverted here relative to the rest of this interface.
+ * The implementation allocates the array and the caller is responsible for
+ * releasing it once it has finished with it, otherwise every call leaks.
+ * This interface does not state which allocator was used and provides no release
+ * function of its own, so the matching deallocator is not established by this
+ * contract and a caller must confirm it with the vendor implementation before
+ * freeing. [`docs/pages/EthSWHAlSpec.md:96`]
+ *
+ * @note Error handling: on `RETURN_ERR` a caller retries or reports, and must not
+ * attempt to release memory it was never given.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls. The
+ * returned array is private to the caller that received it, so no locking is
+ * needed to read it afterwards. [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalExtSw_getAssociatedDevice(ULONG *output_array_size, eth_device_t **output_struct);
 
-/**!
- * @brief Callback function invoked for Ethernet client association/disassociation events.
- * 
- * This callback is triggered when a new Ethernet client associates with the access point (AP) or an existing client disassociates. It provides details about the associated/disassociated device.
+/**
+ * @brief Notification a caller implements to learn that an Ethernet device
+ * associated with or disassociated from a switch port.
  *
- * @param[in] eth_dev - Pointer to an `eth_device_t` structure containing information about the associated/disassociated Ethernet device.
+ * The implementation invokes the function a caller installed with
+ * `CcspHalExtSw_ethAssociatedDevice_callback_register()` each time a device
+ * appears on or leaves a port. `eth_dev->eth_Active` distinguishes the two
+ * cases. A caller implements this function; it does not call it.
  *
- * @returns Status of the callback operation:
- * @retval RETURN_OK - On successful processing of the event.
- * @retval RETURN_ERR - On error.  (e.g. null pointers, or mac address not found)
+ * @param[in] eth_dev - Details of the device the event concerns. The pointer and
+ * the structure it addresses belong to the implementation and are valid only for
+ * the duration of the call, so an implementation of this callback must copy any
+ * field it needs to keep rather than store the pointer, and must not release it.
+ *
+ * @returns Status the callback reports back to the implementation.
+ * @retval RETURN_OK - The event was processed.
+ * @retval RETURN_ERR - The event could not be processed, for example because
+ * `eth_dev` was NULL or the device was not recognised.
+ *
+ * @warning This interface does not specify the thread or process context in
+ * which the callback runs, nor whether deliveries are serialised, nor whether
+ * calling back into this HAL from inside it is permitted. An implementation of
+ * this callback must therefore protect its own state, must not assume it runs on
+ * the registering thread, and should return promptly and defer real work rather
+ * than block the caller.
+ *
+ * @see CcspHalExtSw_ethAssociatedDevice_callback_register
  */
 typedef INT (*CcspHalExtSw_ethAssociatedDevice_callback)(eth_device_t *eth_dev);
 
-/**!
- * @brief Registers a callback function for Ethernet client association/disassociation events.
+/**
+ * @brief Installs the callback that reports Ethernet device association and
+ * disassociation.
  *
- * @param[in] callback_proc - Pointer to the `CcspHalExtSw_ethAssociatedDevice_callback` function to be registered.
+ * This is the interface's asynchronous notification path: once a callback is
+ * installed, the implementation reports device arrivals and departures as they
+ * happen instead of the caller polling
+ * `CcspHalExtSw_getAssociatedDevice()`.
+ *
+ * @param[in] callback_proc - Function to install, of type
+ * ::CcspHalExtSw_ethAssociatedDevice_callback. It must remain callable for as
+ * long as notifications are wanted, so it must not be a function whose
+ * containing module may be unloaded. This interface defines no way to remove a
+ * previously installed callback and does not state whether a second call
+ * replaces the first or adds to it, so a caller registers once. It also does not
+ * state whether passing NULL is a valid way to disable delivery, so a caller must
+ * not rely on that.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post Association and disassociation events are delivered to
+ * `callback_proc`.
+ *
+ * @execution callback
+ *
+ * @warning This function reports nothing: it returns no value, so a caller
+ * cannot tell from it whether registration succeeded. Confirmation is only
+ * available indirectly, by observing that notifications arrive.
+ *
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread; it installs a pointer rather than waiting for an event.
+ * [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls, and in
+ * particular must not register from one thread while another is calling this
+ * interface. [`docs/pages/EthSWHAlSpec.md:84`]
+ *
+ * @see CcspHalExtSw_ethAssociatedDevice_callback
  */
 void CcspHalExtSw_ethAssociatedDevice_callback_register(CcspHalExtSw_ethAssociatedDevice_callback callback_proc);
-
-/*
- *TODO: Ensure the upper layers have a consistent interface for all platforms and configurations. Functions on unsupported platforms should return a NOT_SUPPORTED enum. Remove build flags for features in the interface between layers, allowing the same binary upper layer to run against any vendor implementation without rebuilding.
- */
 
 #ifdef FEATURE_RDKB_WAN_MANAGER
 #ifdef FEATURE_RDKB_AUTO_PORT_SWITCH
 
-/**!
- * @brief Configures an Ethernet port for WAN functionality.
+/**
+ * @brief Puts one named Ethernet interface into or out of WAN mode.
  *
- * This function enables or disables the Ethernet WAN feature on a specific port. 
+ * Where `CcspHalExtSw_setEthWanPort()` selects the WAN port by index, this
+ * function acts on an interface by name, which is how the automatic port-switch
+ * feature moves the WAN role between interfaces.
  *
- * @param[in] ifname - Name of the Ethernet interface to configure (e.g., "eth0", "eth1", etc.).
- * @param[in] WanMode - Boolean value indicating whether to enable (true) or disable (false) Ethernet WAN on the port.
+ * @param[in] ifname - Name of the interface to configure, as a NUL-terminated
+ * string, for example "eth0". The callee reads the string and does not modify
+ * it; this interface does not state whether the callee retains the pointer, so a
+ * caller keeps the buffer valid for the duration of the call and must not pass a
+ * pointer to storage it is about to release. The interface specifies neither a
+ * maximum length nor the set of acceptable names. Must not be NULL.
+ * @param[in] WanMode - `TRUE` to make the interface a WAN interface, `FALSE` to
+ * return it to LAN use.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid interface name, configuration error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the named interface is in the requested mode. Changing the
+ * mode of an interface that is carrying traffic interrupts that traffic.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The interface was reconfigured.
+ * @retval RETURN_ERR - The change was rejected, for example because `ifname`
+ * names no interface, was NULL, or the interface could not be reconfigured.
+ *
+ * @warning This declaration is compiled only when both `FEATURE_RDKB_WAN_MANAGER`
+ * and `FEATURE_RDKB_AUTO_PORT_SWITCH` are defined, so it is absent from a build
+ * that lacks either. Code calling it must be guarded by the same two macros; the
+ * interface offers no runtime way to discover whether it is present, and no
+ * "not supported" result, so an unguarded call is a build failure rather than a
+ * handled error.
+ *
+ * @note Error handling: a caller reports the failure and leaves the WAN
+ * assignment as it was; the return value does not say whether the interface was
+ * partially reconfigured, so a caller re-reads the WAN state with
+ * `CcspHalExtSw_getEthWanEnable()` and `CcspHalExtSw_getEthWanPort()`.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 int CcspHalExtSw_ethPortConfigure(char *ifname, BOOLEAN WanMode);
 
 #endif // FEATURE_RDKB_AUTO_PORT_SWITCH
 #endif // FEATURE_RDKB_WAN_MANAGER
 
-//<<
-
-/**!
- * @brief Retrieves the Ethernet WAN enable status.
+/**
+ * @brief Reads whether the Ethernet WAN feature is enabled.
  *
- * @param[out] pFlag - Pointer to a BOOLEAN variable to store the Ethernet WAN enable status.
- *                      - true (1): Ethernet WAN is enabled.
- *                      - false (0): Ethernet WAN is disabled.
+ * Reports the feature's administrative setting. It says nothing about whether
+ * the WAN link is up; `GWP_GetEthWanLinkStatus()` reports that.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., null pointer).
+ * @param[out] pFlag - Caller-allocated `BOOLEAN` the setting is written to:
+ * `TRUE` if Ethernet WAN is enabled, `FALSE` if it is disabled. Must not be
+ * NULL.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `*pFlag` has been written; on `RETURN_ERR` it is undefined
+ * and a caller treats it as unset rather than as `FALSE`.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The setting was read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `pFlag` was NULL or
+ * the setting could not be retrieved.
+ *
+ * @note Error handling: a caller must not treat `RETURN_ERR` as "disabled",
+ * because the two are different states; it retries or reports instead.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalExtSw_getEthWanEnable(BOOLEAN *pFlag);
 
-/**!
- * @brief Enables or disables Ethernet WAN functionality.
+/**
+ * @brief Enables or disables the Ethernet WAN feature.
  *
- * @param[in] Flag - Boolean value:
- *                     - true (1): Enable Ethernet WAN.
- *                     - false (0): Disable Ethernet WAN.
+ * Enabling makes the selected Ethernet port the WAN interface; disabling
+ * returns it to LAN use. The port acted on is the one
+ * `CcspHalExtSw_getEthWanPort()` reports, so a caller that wants a specific port
+ * sets it with `CcspHalExtSw_setEthWanPort()` first.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure.
+ * @param[in] Flag - `TRUE` to enable Ethernet WAN, `FALSE` to disable it. Pass
+ * `TRUE` or `FALSE`; this interface does not define the meaning of any other
+ * value.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the feature is in the requested state and
+ * `CcspHalExtSw_getEthWanEnable()` reports it. Changing the state interrupts
+ * traffic on the affected port. This interface does not state whether the setting
+ * survives a restart, so a caller re-applies it after re-initialisation rather
+ * than assuming it persisted. [`docs/pages/EthSWHAlSpec.md:141`]
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The requested state was applied.
+ * @retval RETURN_ERR - The change was rejected or could not be applied.
+ *
+ * @note Error handling: a caller reads the state back with
+ * `CcspHalExtSw_getEthWanEnable()` rather than assuming the previous state
+ * survived, then reports the failure.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalExtSw_setEthWanEnable(BOOLEAN Flag);
-/*
- *TODO: Remove the #ifdef switches. Interfaces should not have #ifdef switches in them, the interface is fixed for all platforms. Worse case scenario the interface should return not supported.
- */
+
 #ifdef FEATURE_RDKB_AUTO_PORT_SWITCH
-/**!
- * @brief Retrieves the current hardware (HW) WAN configuration status.
+/**
+ * @brief Reports whether the hardware is currently wired for WAN or for LAN
+ * use.
  *
- * @returns The current WAN HW configuration status:
- * @retval TRUE - WAN is enabled.
- * @retval FALSE - LAN is enabled.
+ * Answers which of the two hardware configurations the automatic port-switch
+ * feature has the device in. It is a hardware-level view, distinct from the
+ * Ethernet WAN feature setting that `CcspHalExtSw_getEthWanEnable()` reports.
+ *
+ * @return `TRUE` if the hardware is configured for WAN, `FALSE` if it is
+ * configured for LAN. These are the only two values this function reports.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ *
+ * @warning This function has no error channel. Its signature admits no status
+ * value and no output parameter, so a failed query is indistinguishable from a
+ * successful query that found the LAN configuration: both surface as `FALSE`. A
+ * caller that must not act on a false negative has no way to detect one through
+ * this interface, and this interface defines no alternative convention for
+ * signalling failure here.
+ *
+ * @warning This declaration is compiled only when `FEATURE_RDKB_AUTO_PORT_SWITCH`
+ * is defined, so it is absent from a build without that macro. Code calling it
+ * must be guarded by the same macro; the interface provides no runtime presence
+ * check and no "not supported" result.
+ *
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 BOOLEAN CcspHalExtSw_getCurrentWanHWConf();
 #endif
 
-/**!
- * @brief Retrieves the Ethernet WAN port number.
+/**
+ * @brief Reads which Ethernet port is selected for WAN use.
  *
- * This function retrieves the numerical index of the Ethernet port currently configured for WAN functionality.
+ * Reports the port index the Ethernet WAN feature is bound to, whether or not
+ * the feature is currently enabled.
  *
- * @param[out] pPort - Pointer to an unsigned integer variable where the port number will be stored. Valid range: 0 to (MaxEthPort - 1).
+ * @param[out] pPort - Caller-allocated `UINT` the port index is written to. Must
+ * not be NULL. The index is the 0-based Ethernet WAN numbering that
+ * `ETHWAN_DEF_INTF_NUM` uses, not a ::CCSP_HAL_ETHSW_PORT enumerator. This
+ * interface does not define the upper bound of the index - no symbol here states
+ * how many external Ethernet ports a product has - so a caller must not derive
+ * one from ::CCSP_HAL_ETHSW_PORT and must obtain the port count from the
+ * platform instead.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid pointer, retrieval error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `*pPort` has been written; on `RETURN_ERR` it is undefined
+ * and a caller treats it as unset rather than as port 0.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The port index was read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `pPort` was NULL or
+ * the selection could not be retrieved.
+ *
+ * @note Error handling: a caller must not fall back to `ETHWAN_DEF_INTF_NUM` on
+ * failure and present it as the live selection, because the default and the
+ * current selection are different facts; it retries or reports instead.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalExtSw_getEthWanPort(UINT *pPort);
 
-/**!
- * @brief Sets the Ethernet WAN interface/port number.
+/**
+ * @brief Selects which Ethernet port is used for WAN.
  *
- * This function configures which Ethernet port will be used for the WAN connection.
+ * Binds the Ethernet WAN feature to a physical port. Whether WAN is actually
+ * active on it is governed separately by `CcspHalExtSw_setEthWanEnable()`.
  *
- * @param[in] Port - The port number to set as the Ethernet WAN port. Valid range: 0 to (MaxEthPort - 1).
+ * @param[in] Port - Port index to select, in the 0-based Ethernet WAN numbering
+ * that `ETHWAN_DEF_INTF_NUM` uses. It is not a ::CCSP_HAL_ETHSW_PORT enumerator,
+ * and passing one is a numbering error that this interface cannot detect for the
+ * caller. This interface does not define the upper bound of the index, so a
+ * caller obtains the port count from the platform and must handle this function
+ * rejecting an index the hardware does not have.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port number, configuration error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the feature is bound to `Port` and
+ * `CcspHalExtSw_getEthWanPort()` reports it. Moving the WAN role away from a port
+ * that is carrying WAN traffic interrupts that traffic. This interface does not
+ * state whether the selection survives a restart, so a caller re-applies it after
+ * re-initialisation. [`docs/pages/EthSWHAlSpec.md:141`]
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The port was selected.
+ * @retval RETURN_ERR - The selection was rejected, for example because `Port` is
+ * not a port the hardware has, or the change could not be applied.
+ *
+ * @note Error handling: a caller reads the selection back with
+ * `CcspHalExtSw_getEthWanPort()` rather than assuming the previous value
+ * survived, and does not retry the same index after a rejection.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalExtSw_setEthWanPort(UINT Port);
 
-/**!
- * @brief Retrieves statistics for a specified Ethernet switch port.
+/**
+ * @brief Reads the traffic and error counters of one switch port.
  *
- * This function populates the provided structure with various statistics about the specified Ethernet switch port.
+ * Fills a caller-supplied ::CCSP_HAL_ETH_STATS with the port's counters.
  *
- * @param[in]  PortId - Identifier of the Ethernet switch port (see `CCSP_HAL_ETHSW_PORT`).
- * @param[out] pStats - Pointer to a `CCSP_HAL_ETH_STATS` structure to store the retrieved statistics.
+ * @param[in]  PortId - Port to query. Valid values are the enumerators of
+ * ::CCSP_HAL_ETHSW_PORT except ::CCSP_HAL_ETHSW_PortMax.
+ * @param[out] pStats - Pointer to a ::CCSP_HAL_ETH_STATS the caller allocated and
+ * continues to own; the implementation writes into it and does not retain the
+ * pointer. Must not be NULL. Every member is written on success, so the caller
+ * need not pre-clear the structure.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., invalid port ID, retrieval error).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` the structure holds the port's counters as of the call. On
+ * `RETURN_ERR` this interface does not define whether any member was written, so
+ * a caller discards the whole structure rather than reading part of it.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The counters were read and stored.
+ * @retval RETURN_ERR - The read failed, for example because `PortId` names no
+ * implemented port, `pStats` was NULL, or the counters could not be retrieved.
+ *
+ * @note The counters carry no unit, window or wrap semantics in this interface
+ * (see ::CCSP_HAL_ETH_STATS), and it defines no way to reset them, so a caller
+ * computing a rate differences two samples over its own elapsed time and copes
+ * with a counter that wraps or restarts.
+ * @note Error handling: re-check the arguments, then retry or report; a failed
+ * sample is skipped rather than treated as zero, which would otherwise appear as
+ * a large negative delta.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT CcspHalEthSwGetEthPortStats(CCSP_HAL_ETHSW_PORT PortId, PCCSP_HAL_ETH_STATS pStats);
 
@@ -601,27 +1151,65 @@ INT CcspHalEthSwGetEthPortStats(CCSP_HAL_ETHSW_PORT PortId, PCCSP_HAL_ETH_STATS 
  */
 
 
+
 /**
  * @addtogroup ETHSW_HAL_TYPES
  * @{
  */
 
 /**
-* @brief Define callback function pointers which needs to be called
-* from provisioning abstraction layer when any provisioning
-* event occurs.
-*/
-
-/**! Callback function to be invoked when the Ethernet WAN link goes up. */
+ * @brief Notification a caller implements to learn that the Ethernet WAN link
+ * has come up.
+ *
+ * A caller supplies this function in the `pGWP_act_EthWanLinkUP` slot of an
+ * ::appCallBack and installs it with `GWP_RegisterEthWan_Callback()`; the
+ * provisioning abstraction layer invokes it when the corresponding provisioning
+ * event occurs. It takes no argument and returns nothing, so the notification
+ * carries no detail beyond the fact of the event: a caller that needs the port,
+ * the interface name or the current state queries
+ * `CcspHalExtSw_getEthWanPort()`, `GWP_GetEthWanInterfaceName()` or
+ * `GWP_GetEthWanLinkStatus()` from inside or after the callback.
+ *
+ * @warning This interface does not specify the thread or process context in
+ * which the callback runs, whether deliveries are serialised, or whether calling
+ * back into this HAL from inside it is permitted. An implementation must
+ * therefore protect its own state, must not assume it runs on the registering
+ * thread, and should return promptly rather than block the provisioning layer.
+ *
+ * @see GWP_RegisterEthWan_Callback
+ */
 typedef void (*fpEthWanLink_Up)(); 
 
-/**! Callback function to be invoked when the Ethernet WAN link goes down. */
+/**
+ * @brief Notification a caller implements to learn that the Ethernet WAN link
+ * has gone down.
+ *
+ * The counterpart of ::fpEthWanLink_Up, supplied in the
+ * `pGWP_act_EthWanLinkDown` slot of an ::appCallBack and installed by
+ * `GWP_RegisterEthWan_Callback()`. It carries no argument and no result, and the
+ * same unspecified execution context applies.
+ *
+ * @warning As for ::fpEthWanLink_Up, this interface does not specify the calling
+ * context, the serialisation of deliveries or the legality of re-entering this
+ * HAL from inside the callback.
+ *
+ * @see GWP_RegisterEthWan_Callback
+ */
 typedef void (*fpEthWanLink_Down)();
 
-/**! Stores callback functions for Ethernet WAN link status changes. */
+/**
+ * @brief The pair of Ethernet WAN link callbacks a caller installs.
+ *
+ * A caller fills in both members and passes the structure's address to
+ * `GWP_RegisterEthWan_Callback()`. This interface does not state whether the
+ * implementation copies the structure or retains the pointer, so a caller keeps
+ * the object alive for as long as notifications are wanted rather than passing a
+ * short-lived one. It likewise does not state whether a member may be left NULL
+ * to decline one of the two events, so a caller supplies both.
+ */
 typedef struct __appCallBack {
-    fpEthWanLink_Up pGWP_act_EthWanLinkUP; /**!< Callback for EthWan link up event. */
-    fpEthWanLink_Down pGWP_act_EthWanLinkDown; /**!< Callback for EthWan link down event. */
+    fpEthWanLink_Up pGWP_act_EthWanLinkUP; /*!< Function invoked when the Ethernet WAN link comes up. */
+    fpEthWanLink_Down pGWP_act_EthWanLinkDown; /*!< Function invoked when the Ethernet WAN link goes down. */
 } appCallBack;
 
 /**
@@ -633,41 +1221,128 @@ typedef struct __appCallBack {
  * @{
  */
 
-/**!
- * @brief Registers RDKB callback functions for Ethernet WAN events.
+/**
+ * @brief Installs the Ethernet WAN link up and link down callbacks.
  *
- * @param[in] obj - Pointer to an `appCallBack` struct containing the callback functions to be registered.
+ * Together with
+ * `CcspHalExtSw_ethAssociatedDevice_callback_register()`, this is the
+ * interface's asynchronous notification path: once installed, the provisioning
+ * abstraction layer reports Ethernet WAN link transitions as they happen instead
+ * of the caller polling `GWP_GetEthWanLinkStatus()`.
+ *
+ * @param[in] obj - Address of a caller-owned ::appCallBack holding both callback
+ * functions. Must not be NULL. The caller keeps ownership and must keep the
+ * object valid for as long as notifications are wanted, because this interface
+ * does not state whether the implementation copies it. It defines no way to
+ * remove a registration and does not state whether a second call replaces the
+ * first, so a caller registers once.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post Ethernet WAN link transitions are delivered to the two functions in
+ * `obj`.
+ *
+ * @execution callback
+ *
+ * @warning This function reports nothing: it returns no value, so a caller
+ * cannot tell from it whether registration succeeded, and a NULL or partially
+ * populated `obj` is not reported back. Confirmation is only available
+ * indirectly, by observing that notifications arrive.
+ *
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread; it installs pointers rather than waiting for an event.
+ * [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls, and in
+ * particular must not register from one thread while another is calling this
+ * interface. [`docs/pages/EthSWHAlSpec.md:84`]
+ *
+ * @see fpEthWanLink_Up
+ * @see fpEthWanLink_Down
  */
 void GWP_RegisterEthWan_Callback(appCallBack *obj);
 
-/**!
- * @brief Retrieves the current status of the Ethernet WAN (EthWAN) link.
+/**
+ * @brief Reports whether the Ethernet WAN link is currently up.
  *
- * @returns Status of the EthWAN link:
- * @retval 1 - Link is up (active).
- * @retval 0 - Link is down (inactive).
- * @retval < 0 - Error occurred (check errno for details).
+ * Gives the live link state of the Ethernet WAN interface, as distinct from the
+ * feature setting `CcspHalExtSw_getEthWanEnable()` reports: the feature can be
+ * enabled while the link is down.
+ *
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ *
+ * @return 1 when the Ethernet WAN link is up, 0 when it is down, and a negative
+ * value when the state could not be determined. Only 1 and 0 are meaningful link
+ * states; a caller tests for a negative value first and must not treat it as
+ * "down", because a failed query and a down link are different facts. The
+ * interface does not define which negative value is used or distinguish causes
+ * among them, and it does not state that any global error indicator is set, so a
+ * caller must not consult one.
+ *
+ * @note Error handling: on a negative result a caller reports the failure and
+ * retries, and leaves any state that depends on the link unchanged rather than
+ * driving it to "down".
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT GWP_GetEthWanLinkStatus();
 
-/**!
- * @brief Retrieves the name of the Ethernet WAN (EthWAN) interface.
+/**
+ * @brief Reads the name of the interface currently used for Ethernet WAN.
  *
- * This function populates the provided buffer with the name of the currently active EthWAN interface.
+ * Writes the interface name into a caller-supplied buffer, so that a caller can
+ * address the WAN interface by the name the platform actually uses instead of
+ * assuming one.
  *
- * @param[out] Interface - Buffer (min. 64 bytes) to store the interface name (vendor-specific).
- * @param[in]  maxSize   - Maximum size of the buffer (11 to 262 bytes).
+ * @param[out] Interface - Buffer the caller allocated and continues to own; the
+ * implementation writes the name into it and does not retain the pointer. Must
+ * not be NULL. Size it to `ETHWAN_INTERFACE_NAME_MAX_LENGTH`, which is the only
+ * bound this interface declares, and pass that same size as `maxSize`. This
+ * interface does not state whether the written name is NUL-terminated, so a
+ * caller zero-fills the buffer before the call and does not rely on a terminator
+ * being added.
+ * @param[in] maxSize - Number of bytes available in `Interface`, so that the
+ * implementation does not write past its end. Pass the buffer's real size.
  *
- * @returns Status of the operation:
- * @retval RETURN_OK - On success.
- * @retval RETURN_ERR - On failure (e.g., null pointer, insufficient buffer size).
+ * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
+ * [`docs/pages/EthSWHAlSpec.md:78`]
+ * @post On `RETURN_OK` `Interface` holds the interface name. On `RETURN_ERR` this
+ * interface does not define whether the buffer was partially written, so a
+ * caller discards its contents.
+ *
+ * @returns Status of the operation.
+ * @retval RETURN_OK - The name was written into the buffer.
+ * @retval RETURN_ERR - The name could not be provided, for example because
+ * `Interface` was NULL, `maxSize` was too small for the name, or no Ethernet WAN
+ * interface is currently assigned.
+ *
+ * @warning The interface is not self-consistent about the size of this buffer,
+ * and a caller must not assume the statements agree.
+ * `ETHWAN_INTERFACE_NAME_MAX_LENGTH` declares 32 bytes, while this function has
+ * also been described as requiring a buffer of at least 64 bytes and a `maxSize`
+ * confined to an 11-to-262-byte range. Nothing in this interface reconciles the
+ * three figures, so no vendor-independent minimum or maximum can be derived from
+ * them. Sizing to `ETHWAN_INTERFACE_NAME_MAX_LENGTH` and passing that size is the
+ * only option grounded in a declaration in this header; a caller with a longer
+ * name to accommodate must confirm the real bound with the vendor
+ * implementation.
+ *
+ * @note Error handling: `RETURN_ERR` does not distinguish "buffer too small" from
+ * "no interface assigned", so a caller cannot resize and retry on the strength of
+ * the return value alone; it reports the failure and does not treat the buffer as
+ * holding a name.
+ * @note Blocking: must complete synchronously without blocking the calling
+ * thread. [`docs/pages/EthSWHAlSpec.md:116`, `:120`]
+ * @note Thread safety: not thread safe; a caller serialises its calls.
+ * [`docs/pages/EthSWHAlSpec.md:84`]
  */
 INT GWP_GetEthWanInterfaceName(unsigned char *Interface, ULONG maxSize);
-
-#endif /* __CCSP_HAL_ETHSW_H__ */
 
 /**
  * @}
  */
 
+#endif /* __CCSP_HAL_ETHSW_H__ */
 
