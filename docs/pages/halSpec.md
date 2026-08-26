@@ -9,6 +9,8 @@
 | 2024-09-25 | `ETH_5_PORTS` added to the `ETHWAN_DEF_INTF_NUM` ladder (`pri#7`, `RDKCOM-5064`). | 1.1.0 |
 | 2026-08-24 | Specification rewritten to the canonical RDK-B HAL topic set: every declared function named in `API Surface`, the asynchronous notification path corrected, and the unresolved footprint and timeout requirements replaced with explicit statements. Describes the interface at tag `1.1.0`. | 1.1.0 |
 
+**Provenance of this page.** It was renamed from `docs/pages/EthSWHAlSpec.md` to `docs/pages/halSpec.md` in the same change that rewrote it against the canonical topic set. Git records a rename only where the two versions still resemble each other, and a full rewrite does not, so `git log --follow -- docs/pages/halSpec.md` begins at that change: the revisions before it are reached with `git log -- docs/pages/EthSWHAlSpec.md`.
+
 Dates are taken from `CHANGELOG.md` where it records one. The `1.1.0` entry in that file
 carries no date, so the date above is the date of the `1.1.0` tag.
 
@@ -226,10 +228,11 @@ recommendation:
   this HAL from inside a callback is permitted. A caller must therefore protect its own state,
   must not assume the callback runs on the registering thread, and should return promptly and
   defer real work rather than block the implementation.
-- **Data passed to a callback is borrowed.** The `eth_device_t` a
-  `CcspHalExtSw_ethAssociatedDevice_callback` receives belongs to the implementation and is
-  valid only for the duration of the call, so a callback copies any field it needs to keep and
-  must not retain or release the pointer.
+- **The lifetime of the data passed to a callback is not specified.** This interface states
+  neither who owns the `eth_device_t` a `CcspHalExtSw_ethAssociatedDevice_callback` receives nor
+  how long the pointer stays valid, so a callback must treat both as unknown: copy any field it
+  needs to keep rather than storing the pointer, release nothing, and not rely on the structure
+  remaining readable after the callback returns.
 - **Registration reports nothing.** Both registration functions return `void`, so a caller
   cannot tell from the call whether registration succeeded; confirmation is available only
   indirectly, by observing that notifications arrive.
@@ -339,6 +342,58 @@ value `RETURN_ERR`, an implementation is expected to record what actually failed
 caller investigating a failure reads this file rather than inferring a cause from the return
 value.
 
+**Client `MAC` addresses must not reach any diagnostic sink.** This interface declares no
+credential accessor, so it carries no password, key or seed \- but one declaration takes a client
+`MAC` address as an argument, `CcspHalEthSwLocatePortByMacAddress`, and the association surface
+reports the same class of value in the `eth_devMacAddress` member of every `eth_device_t` that
+`CcspHalExtSw_getAssociatedDevice()` returns and that a
+`CcspHalExtSw_ethAssociatedDevice_callback` receives. A client `MAC` address is personal data in
+this context, because it links a device, and through it a person, to a place and a time. The
+requirements below are therefore normative rather than advisory and bind the vendor
+implementation and the RDK-B caller equally. They are stated here because the interface declares
+no scrubbing helper and no opaque type, so nothing enforces them mechanically:
+
+- **The protected item is the address together with every fragment, hash or length of it.** A
+  leading or trailing octet, an `OUI` prefix, an octet count, a digest and a keyed hash are each
+  the protected item for the purpose of these rules: a fragment discloses the vendor, a length
+  narrows a search across a fleet, and a digest is a stable pseudonym that re-identifies the same
+  device on every appearance. Truncation and hashing are therefore not redaction.
+- **No disclosure at any severity, in any stream.** Neither an implementation nor a caller writes
+  the protected item to `ethsw_vendor_hal.log`, to `syslog`, to standard output, to standard
+  error, to a trace buffer or into the text of an error message, at any level in the ladder
+  above, `DEBUG` and `TRACE` included. A value that is too sensitive for `INFO` is not made
+  acceptable by lowering the severity, and a build that turns verbose logging on must not become
+  a build that publishes device identity.
+- **No disclosure in a crash artefact, a support bundle, or telemetry.** A core dump, a minidump,
+  a heap dump, a stack dump, a post-mortem trace, a diagnostic or bug-report bundle, and a
+  telemetry, analytics or metrics record must each be free of the protected item \- as an
+  argument value, as part of a captured `eth_device_t`, and in any buffer left behind by a failed
+  lookup. A vendor that cannot exclude it from a core file disables core files for the process on
+  a production build rather than ship the exposure.
+- **One fixed, value-independent redaction marker: `[REDACTED]`.** Where a diagnostic must record
+  that a lookup or an enumeration happened, it names the operation, the port and the outcome and
+  substitutes the literal marker `[REDACTED]` for the address \- the same marker for every
+  address, of a form and a length that do not vary with the value it replaces, so that nothing
+  about the address can be inferred from the marker. A per-poll or per-frame trace keyed on a
+  client `MAC` identifies the port and the association, not the device.
+- **The single failure code does not license logging the input.** Where
+  `CcspHalEthSwLocatePortByMacAddress` returns `RETURN_ERR`, the diagnostic records that the
+  lookup failed, never the address it was given: an address that was not found on this switch is
+  frequently a valid address on another interface, another device or another day.
+- **A caller-owned copy is cleared once it has been used.** A caller that copies an address out
+  of an `eth_device_t`, or that holds the six-octet buffer it passed to
+  `CcspHalEthSwLocatePortByMacAddress`, overwrites that storage in place once it has finished
+  with it, on every path including the failure path, and does not carry it into a data model, a
+  message, a configuration file, a cache, an environment variable or a longer-lived allocation.
+  The interface provides no way for a caller to verify that an implementation observes any of
+  these rules, so a caller integrating a vendor implementation establishes compliance by
+  inspection or by contract rather than assuming it.
+
+The declaration of `CcspHalEthSwLocatePortByMacAddress` in
+[`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h) carries the same rule as a `@warning` on its
+`mac` argument, so a reader of the generated API reference is bound by it without having to reach
+this page.
+
 ### Memory and performance requirements
 
 The component should be designed for efficiency, minimizing its impact on system resources
@@ -361,8 +416,9 @@ This document is derived from the sources it cites, so it goes stale when one of
 rather than at a fixed interval. Any change to a file this document cites as a source obliges a
 review of the topics that cite it: a change to `ccsp_hal_ethsw.h` obliges a review of
 `Asynchronous Notification Model`, `Internal Error Handling`, `Memory Model`,
-`Platform or Product Customization`, `Data Structures and Defines`, `API Surface`,
-`Sequence Diagram` and `State Diagram`; a change to `CHANGELOG.md` or to the repository's tags
+`Logging and debugging requirements`, `Platform or Product Customization`,
+`Data Structures and Defines`, `API Surface`, `Sequence Diagram` and `State Diagram`; a change to
+`CHANGELOG.md` or to the repository's tags
 obliges a review of `Version History`; and a change to `docs/generate_docs.sh` obliges a review
 of `Build Requirements` and `Platform or Product Customization`. The reviewer for this
 repository is the `CODEOWNERS` group `@rdkcentral/rdkb-hal-advisory`, which owns every path
@@ -397,7 +453,7 @@ requirements. Thereafter, vendors are obliged to align their implementation with
 version of the interface. As per Service Level Agreement (SLA) terms, they may transition to
 newer versions based on demand needs.
 
-Each API interface will be versioned using [Semantic Versioning 2.0.0](https://semver.org/),
+Each API interface will be versioned using [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
 the vendor code will comply with a specific version of the interface.
 
 That versioning is carried by the repository's release tags and by nothing inside the header.
@@ -512,14 +568,16 @@ reports the feature setting, `GWP_GetEthWanLinkStatus()` reports the live link, 
   `CCSP_HAL_ETH_STATS` for `CcspHalEthSwGetEthPortStats()`, an `appCallBack` for
   `GWP_RegisterEthWan_Callback()`, the interface-name buffer for
   `GWP_GetEthWanInterfaceName()`, and the enumerated outputs of the port getters - and releases
-  them when it has finished. The HAL writes into them and, except where a declaration says
-  otherwise, does not retain the pointer.
+  them when it has finished. The HAL writes into them; this interface does not state whether it
+  retains any of those pointers, so a caller keeps the storage valid rather than assuming a
+  pointer was discarded when the call returned. See `Memory Model`.
 - **The one HAL-owned allocation**: `CcspHalExtSw_getAssociatedDevice()` allocates the
   `eth_device_t` array it returns and transfers it to the caller, which must release it. The
   matching deallocator is not established by this contract. See `Memory Model`.
-- **Borrowed storage in a callback**: the `eth_device_t` delivered to a
-  `CcspHalExtSw_ethAssociatedDevice_callback` is owned by the implementation and valid only for
-  the duration of the call, so a callback copies what it needs and releases nothing.
+- **Storage delivered to a callback**: this interface states neither the owner nor the valid
+  lifetime of the `eth_device_t` delivered to a
+  `CcspHalExtSw_ethAssociatedDevice_callback`, so a callback copies what it needs, releases
+  nothing, and does not rely on the structure outliving the call.
 - **Interface lifetime**: `CcspHalEthSwInit()` opens the interface for use and there is no
   counterpart that closes it. A registration made with
   `CcspHalExtSw_ethAssociatedDevice_callback_register()` or `GWP_RegisterEthWan_Callback()`
@@ -579,50 +637,52 @@ reports the feature setting, `GWP_GetEthWanLinkStatus()` reports the live link, 
 
 All type and macro definitions are declared in
 [`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h), which documents each member. The tables
-below list what a caller must construct or interpret, with the line each definition starts at.
+below list what a caller must construct or interpret, with the line in that header on which each
+name is defined.
 
 **Enumerations:**
 
 | Type | Declared at | What it represents |
 | --- | --- | --- |
-| `CCSP_HAL_ETHSW_PORT` | `ccsp_hal_ethsw.h:258` | The port a port-scoped call acts on. 1-based: `CCSP_HAL_ETHSW_EthPort1` is 1 and the external ports run to `CCSP_HAL_ETHSW_EthPort8`, followed in declaration order by `CCSP_HAL_ETHSW_Moca1` and `CCSP_HAL_ETHSW_Moca2`, `CCSP_HAL_ETHSW_Wlan1` through `CCSP_HAL_ETHSW_Wlan4`, `CCSP_HAL_ETHSW_Processor1` and `CCSP_HAL_ETHSW_Processor2`, `CCSP_HAL_ETHSW_InterconnectPort1` and `CCSP_HAL_ETHSW_InterconnectPort2` for links to another switch or SoC block, `CCSP_HAL_ETHSW_MgmtPort`, and `CCSP_HAL_ETHSW_PortMax` as the count and exclusive upper bound. |
-| `CCSP_HAL_ETHSW_LINK_RATE` | `ccsp_hal_ethsw.h:298` | A port's link speed: `CCSP_HAL_ETHSW_LINK_NULL` (0, no link established, not a rate to configure), then `CCSP_HAL_ETHSW_LINK_10Mbps`, `CCSP_HAL_ETHSW_LINK_100Mbps`, `CCSP_HAL_ETHSW_LINK_1Gbps`, `CCSP_HAL_ETHSW_LINK_2_5Gbps`, `CCSP_HAL_ETHSW_LINK_5Gbps`, `CCSP_HAL_ETHSW_LINK_10Gbps` and `CCSP_HAL_ETHSW_LINK_Auto`. |
-| `CCSP_HAL_ETHSW_DUPLEX_MODE` | `ccsp_hal_ethsw.h:315` | A port's duplex mode: `CCSP_HAL_ETHSW_DUPLEX_Auto` (0), `CCSP_HAL_ETHSW_DUPLEX_Half`, `CCSP_HAL_ETHSW_DUPLEX_Full`. |
-| `CCSP_HAL_ETHSW_LINK_STATUS` | `ccsp_hal_ethsw.h:330` | A port's operational link state: `CCSP_HAL_ETHSW_LINK_Up` (0), `CCSP_HAL_ETHSW_LINK_Down` (no link although a peer may be attached), `CCSP_HAL_ETHSW_LINK_Disconnected` (nothing attached). |
-| `CCSP_HAL_ETHSW_ADMIN_STATUS` | `ccsp_hal_ethsw.h:346` | A port's requested administrative state: `CCSP_HAL_ETHSW_AdminUp` (0), `CCSP_HAL_ETHSW_AdminDown`, `CCSP_HAL_ETHSW_AdminTest`. |
+| `CCSP_HAL_ETHSW_PORT` | `ccsp_hal_ethsw.h:288` | The port a port-scoped call acts on. 1-based: `CCSP_HAL_ETHSW_EthPort1` is 1 and the external ports run to `CCSP_HAL_ETHSW_EthPort8`, followed in declaration order by `CCSP_HAL_ETHSW_Moca1` and `CCSP_HAL_ETHSW_Moca2`, `CCSP_HAL_ETHSW_Wlan1` through `CCSP_HAL_ETHSW_Wlan4`, `CCSP_HAL_ETHSW_Processor1` and `CCSP_HAL_ETHSW_Processor2`, `CCSP_HAL_ETHSW_InterconnectPort1` and `CCSP_HAL_ETHSW_InterconnectPort2` for links to another switch or SoC block, `CCSP_HAL_ETHSW_MgmtPort`, and `CCSP_HAL_ETHSW_PortMax` as the count and exclusive upper bound. |
+| `CCSP_HAL_ETHSW_LINK_RATE` | `ccsp_hal_ethsw.h:308` | A port's link speed: `CCSP_HAL_ETHSW_LINK_NULL` (0, no link established, not a rate to configure), then `CCSP_HAL_ETHSW_LINK_10Mbps`, `CCSP_HAL_ETHSW_LINK_100Mbps`, `CCSP_HAL_ETHSW_LINK_1Gbps`, `CCSP_HAL_ETHSW_LINK_2_5Gbps`, `CCSP_HAL_ETHSW_LINK_5Gbps`, `CCSP_HAL_ETHSW_LINK_10Gbps` and `CCSP_HAL_ETHSW_LINK_Auto`. |
+| `CCSP_HAL_ETHSW_DUPLEX_MODE` | `ccsp_hal_ethsw.h:321` | A port's duplex mode: `CCSP_HAL_ETHSW_DUPLEX_Auto` (0), `CCSP_HAL_ETHSW_DUPLEX_Half`, `CCSP_HAL_ETHSW_DUPLEX_Full`. |
+| `CCSP_HAL_ETHSW_LINK_STATUS` | `ccsp_hal_ethsw.h:336` | A port's operational link state: `CCSP_HAL_ETHSW_LINK_Up` (0), `CCSP_HAL_ETHSW_LINK_Down` (no link although a peer may be attached), `CCSP_HAL_ETHSW_LINK_Disconnected` (nothing attached). |
+| `CCSP_HAL_ETHSW_ADMIN_STATUS` | `ccsp_hal_ethsw.h:351` | A port's requested administrative state: `CCSP_HAL_ETHSW_AdminUp` (0), `CCSP_HAL_ETHSW_AdminDown`, `CCSP_HAL_ETHSW_AdminTest`. |
 
 **Structures:**
 
 | Type | Declared at | What it represents |
 | --- | --- | --- |
-| `CCSP_HAL_ETH_STATS` | `ccsp_hal_ethsw.h:368` | Fifteen traffic and error counters for one port, filled in by `CcspHalEthSwGetEthPortStats()` into caller-owned storage: `BytesSent` and `BytesReceived`, `PacketsSent` and `PacketsReceived`, `ErrorsSent` and `ErrorsReceived`, `UnicastPacketsSent` and `UnicastPacketsReceived`, `DiscardPacketsSent` and `DiscardPacketsReceived`, `MulticastPacketsSent` and `MulticastPacketsReceived`, `BroadcastPacketsSent` and `BroadcastPacketsReceived`, and `UnknownProtoPacketsReceived`. |
-| `eth_device_t` | `ccsp_hal_ethsw.h:757` | One device observed on a switch port, as reported by `CcspHalExtSw_getAssociatedDevice()` and by the association callback: `eth_devMacAddress` (6 binary octets, octet order unspecified), `eth_port` (not a `CCSP_HAL_ETHSW_PORT` enumerator; this interface defines neither its numbering base nor its upper bound), `eth_vlanid` (1 to 4094, reported for information only), `eth_devTxRate` and `eth_devRxRate` (unit vendor-defined, not comparable across implementations), and `eth_Active` (`TRUE` while present, and the member that distinguishes an association from a disassociation). Writing to a received structure changes nothing in the switch. |
-| `appCallBack` | `ccsp_hal_ethsw.h:1210` | The pair of Ethernet WAN link callbacks a caller fills in and passes to `GWP_RegisterEthWan_Callback()`: `pGWP_act_EthWanLinkUP` and `pGWP_act_EthWanLinkDown`. |
+| `CCSP_HAL_ETH_STATS` | `ccsp_hal_ethsw.h:385` | Fifteen traffic and error counters for one port, filled in by `CcspHalEthSwGetEthPortStats()` into caller-owned storage: `BytesSent` and `BytesReceived`, `PacketsSent` and `PacketsReceived`, `ErrorsSent` and `ErrorsReceived`, `UnicastPacketsSent` and `UnicastPacketsReceived`, `DiscardPacketsSent` and `DiscardPacketsReceived`, `MulticastPacketsSent` and `MulticastPacketsReceived`, `BroadcastPacketsSent` and `BroadcastPacketsReceived`, and `UnknownProtoPacketsReceived`. |
+| `eth_device_t` | `ccsp_hal_ethsw.h`, line 777 | One device observed on a switch port, as reported by `CcspHalExtSw_getAssociatedDevice()` and by the association callback: `eth_devMacAddress` (6 binary octets, octet order unspecified), `eth_port` (not a `CCSP_HAL_ETHSW_PORT` enumerator; this interface defines neither its numbering base nor its upper bound), `eth_vlanid` (1 to 4094, reported for information only), `eth_devTxRate` and `eth_devRxRate` (unit vendor-defined, not comparable across implementations), and `eth_Active` (`TRUE` while present, and the member that distinguishes an association from a disassociation). Writing to a received structure changes nothing in the switch. |
+| `appCallBack` | `ccsp_hal_ethsw.h:1288` | The pair of Ethernet WAN link callbacks a caller fills in and passes to `GWP_RegisterEthWan_Callback()`: `pGWP_act_EthWanLinkUP` and `pGWP_act_EthWanLinkDown`. |
 
 **Pointer typedefs**, each declared with its base type and used as the `[out]` parameter form:
-`PCCSP_HAL_ETHSW_PORT` (`:287`), `PCCSP_HAL_ETHSW_LINK_RATE` (`:307`),
-`PCCSP_HAL_ETHSW_DUPLEX_MODE` (`:320`), `PCCSP_HAL_ETHSW_LINK_STATUS` (`:335`),
-`PCCSP_HAL_ETHSW_ADMIN_STATUS` (`:350`) and `PCCSP_HAL_ETH_STATS` (`:384`). No function
+`PCCSP_HAL_ETHSW_PORT` (`:288`), `PCCSP_HAL_ETHSW_LINK_RATE` (`:308`),
+`PCCSP_HAL_ETHSW_DUPLEX_MODE` (`:321`), `PCCSP_HAL_ETHSW_LINK_STATUS` (`:336`),
+`PCCSP_HAL_ETHSW_ADMIN_STATUS` (`:351`) and `PCCSP_HAL_ETH_STATS` (`:385`). No function
 declared in this header currently takes `PCCSP_HAL_ETHSW_PORT`.
 
 **Callback typedefs**, each with the function that installs it:
 
 | Callback typedef | Declared at | Installed by |
 | --- | --- | --- |
-| `CcspHalExtSw_ethAssociatedDevice_callback` | `ccsp_hal_ethsw.h:852` | `CcspHalExtSw_ethAssociatedDevice_callback_register()` |
-| `fpEthWanLink_Up` | `ccsp_hal_ethsw.h:1181` | `GWP_RegisterEthWan_Callback()`, in `appCallBack.pGWP_act_EthWanLinkUP` |
-| `fpEthWanLink_Down` | `ccsp_hal_ethsw.h:1198` | `GWP_RegisterEthWan_Callback()`, in `appCallBack.pGWP_act_EthWanLinkDown` |
+| `CcspHalExtSw_ethAssociatedDevice_callback` | `ccsp_hal_ethsw.h:891` | `CcspHalExtSw_ethAssociatedDevice_callback_register()` |
+| `fpEthWanLink_Up` | `ccsp_hal_ethsw.h:1256` | `GWP_RegisterEthWan_Callback()`, in `appCallBack.pGWP_act_EthWanLinkUP` |
+| `fpEthWanLink_Down` | `ccsp_hal_ethsw.h:1273` | `GWP_RegisterEthWan_Callback()`, in `appCallBack.pGWP_act_EthWanLinkDown` |
 
 **Macro constants:**
 
 | Macro | Declared at | Value and meaning |
 | --- | --- | --- |
-| `RETURN_OK` | `ccsp_hal_ethsw.h:159` | 0. Success, and the only value indicating that a status-returning function honoured its post-conditions. |
-| `RETURN_ERR` | `ccsp_hal_ethsw.h:163` | -1. Failure, and the interface's only error value. See `Internal Error Handling`. |
-| `TRUE` / `FALSE` | `ccsp_hal_ethsw.h:147` / `:151` | 1 and 0, the values to use for a `BOOLEAN` argument or output. No other value is defined. |
-| `UP` / `DOWN` | `ccsp_hal_ethsw.h:106` / `:107` | The strings `"up"` and `"down"` an implementation reports for an interface state; compare against these rather than against a locally spelled literal. |
-| `ETHWAN_DEF_INTF_NUM` | `ccsp_hal_ethsw.h:166` | The compile-time default Ethernet WAN interface index, 0-based, selected by the ladder in `Platform or Product Customization`. |
-| `ETHWAN_INTERFACE_NAME_MAX_LENGTH` | `ccsp_hal_ethsw.h:228` | 32. The only interface-name length bound this header declares; read the consistency warning in `Platform or Product Customization` before sizing a buffer. |
+| `RETURN_OK` | `ccsp_hal_ethsw.h:160` | 0. Success, and the only value indicating that a status-returning function honoured its post-conditions. |
+| `RETURN_ERR` | `ccsp_hal_ethsw.h:164` | -1. Failure, and the interface's only error value. See `Internal Error Handling`. |
+| `TRUE` | `ccsp_hal_ethsw.h:148` | 1. The true value to use for a `BOOLEAN` argument or output; no other non-zero value is defined. |
+| `FALSE` | `ccsp_hal_ethsw.h:152` | 0. The false value to use for a `BOOLEAN` argument or output. |
+| `UP` / `DOWN` | `DOWN` at `ccsp_hal_ethsw.h:108`, with `UP` on the line immediately above it | The strings `"up"` and `"down"` an implementation reports for an interface state; compare against these rather than against a locally spelled literal. |
+| `ETHWAN_DEF_INTF_NUM` | `ccsp_hal_ethsw.h:197` | The compile-time default Ethernet WAN interface index, 0-based, selected by the ladder in `Platform or Product Customization`. |
+| `ETHWAN_INTERFACE_NAME_MAX_LENGTH` | `ccsp_hal_ethsw.h:229` | 32. The only interface-name length bound this header declares; read the consistency warning in `Platform or Product Customization` before sizing a buffer. |
 
 The header also defines the guarded type aliases `ULONG`, `ULLONG`, `CHAR`, `UCHAR`, `BOOLEAN`,
 `INT` and `UINT` so that it can be included where no RDK-B platform type header is available.
@@ -645,51 +705,51 @@ value or a state starts here.
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `CcspHalEthSwInit` | `:453` | Prepares the switch and the HAL for use. Called once at bootup before every other function of this interface. |
+| `CcspHalEthSwInit` | `:459` | Prepares the switch and the HAL for use. Called once at bootup before every other function of this interface. |
 
 **Port configuration and status (6):**
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `CcspHalEthSwGetPortStatus` | `:494` | Reads the live link rate, duplex mode and link state a port has negotiated. |
-| `CcspHalEthSwGetPortCfg` | `:533` | Reads the link rate and duplex mode a port is configured for. |
-| `CcspHalEthSwSetPortCfg` | `:578` | Configures a port's link rate and duplex mode. |
-| `CcspHalEthSwGetPortAdminStatus` | `:612` | Reads a port's administrative state. |
-| `CcspHalEthSwSetPortAdminStatus` | `:650` | Sets a port's administrative state, which is how a port is enabled or disabled. |
-| `CcspHalEthSwSetAgingSpeed` | `:691` | Sets how quickly a port ages MAC addresses out of the forwarding table. The unit and range are vendor-defined and the value cannot be read back. |
+| `CcspHalEthSwGetPortStatus` | `:502` | Reads the live link rate, duplex mode and link state a port has negotiated. |
+| `CcspHalEthSwGetPortCfg` | `:543` | Reads the link rate and duplex mode a port is configured for. |
+| `CcspHalEthSwSetPortCfg` | `:592` | Configures a port's link rate and duplex mode. |
+| `CcspHalEthSwGetPortAdminStatus` | `:630` | Reads a port's administrative state. |
+| `CcspHalEthSwSetPortAdminStatus` | `:672` | Sets a port's administrative state, which is how a port is enabled or disabled. |
+| `CcspHalEthSwSetAgingSpeed` | `:720` | Sets how quickly a port ages MAC addresses out of the forwarding table. The unit and range are vendor-defined and the value cannot be read back. |
 
 **MAC-address and associated-device discovery (3):**
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `CcspHalEthSwLocatePortByMacAddress` | `:735` | Finds which port a learned MAC address is associated with, in a numbering this interface does not define. |
-| `CcspHalExtSw_getAssociatedDevice` | `:822` | Enumerates the devices currently seen on the Ethernet ports as a snapshot. The HAL allocates the array and the caller releases it. |
-| `CcspHalExtSw_ethAssociatedDevice_callback_register` | `:892` | Installs the device association and disassociation callback. Returns `void`. |
+| `CcspHalEthSwLocatePortByMacAddress` | `:769` | Finds which port a learned MAC address is associated with, in a numbering this interface does not define. |
+| `CcspHalExtSw_getAssociatedDevice` | `:859` | Enumerates the devices currently seen on the Ethernet ports as a snapshot. The HAL allocates the array and the caller releases it. |
+| `CcspHalExtSw_ethAssociatedDevice_callback_register` | `:931` | Installs the device association and disassociation callback. Returns `void`. |
 
 **Ethernet WAN selection and provisioning (7):**
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `CcspHalExtSw_ethPortConfigure` | `:939` | Puts one named Ethernet interface into or out of WAN mode. **Declared only when both `FEATURE_RDKB_WAN_MANAGER` and `FEATURE_RDKB_AUTO_PORT_SWITCH` are defined.** |
-| `CcspHalExtSw_getEthWanEnable` | `:971` | Reads whether the Ethernet WAN feature is enabled. |
-| `CcspHalExtSw_setEthWanEnable` | `:1005` | Enables or disables the Ethernet WAN feature on the currently selected port. |
-| `CcspHalExtSw_getCurrentWanHWConf` | `:1039` | Reports whether the hardware is wired for WAN or for LAN use. Returns `BOOLEAN` and has no error channel. **Declared only when `FEATURE_RDKB_AUTO_PORT_SWITCH` is defined.** |
-| `CcspHalExtSw_getEthWanPort` | `:1074` | Reads which Ethernet port is selected for WAN use, as a 0-based index. |
-| `CcspHalExtSw_setEthWanPort` | `:1110` | Sets the Ethernet WAN port index. |
-| `GWP_GetEthWanInterfaceName` | `:1341` | Reads the name of the interface currently used for Ethernet WAN into a caller-supplied buffer. |
+| `CcspHalExtSw_ethPortConfigure` | `:992` | Puts one named Ethernet interface into or out of WAN mode. **Declared only when both `FEATURE_RDKB_WAN_MANAGER` and `FEATURE_RDKB_AUTO_PORT_SWITCH` are defined.** |
+| `CcspHalExtSw_getEthWanEnable` | `:1027` | Reads whether the Ethernet WAN feature is enabled. |
+| `CcspHalExtSw_setEthWanEnable` | `:1067` | Enables or disables the Ethernet WAN feature on the currently selected port. |
+| `CcspHalExtSw_getCurrentWanHWConf` | `:1101` | Reports whether the hardware is wired for WAN or for LAN use. Returns `BOOLEAN` and has no error channel. **Declared only when `FEATURE_RDKB_AUTO_PORT_SWITCH` is defined.** |
+| `CcspHalExtSw_getEthWanPort` | `:1139` | Reads which Ethernet port is selected for WAN use, as a 0-based index. |
+| `CcspHalExtSw_setEthWanPort` | `:1180` | Sets the Ethernet WAN port index. |
+| `GWP_GetEthWanInterfaceName` | `:1422` | Reads the name of the interface currently used for Ethernet WAN into a caller-supplied buffer. |
 
 **Ethernet WAN link events (2):**
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `GWP_RegisterEthWan_Callback` | `:1262` | Installs the Ethernet WAN link up and link down callbacks from a caller-owned `appCallBack`. Returns `void`. |
-| `GWP_GetEthWanLinkStatus` | `:1290` | Reports the live Ethernet WAN link state: 1 up, 0 down, negative when it could not be determined. |
+| `GWP_RegisterEthWan_Callback` | `:1337` | Installs the Ethernet WAN link up and link down callbacks from a caller-owned `appCallBack`. Returns `void`. |
+| `GWP_GetEthWanLinkStatus` | `:1365` | Reports the live Ethernet WAN link state: 1 up, 0 down, negative when it could not be determined. |
 
 **Statistics and diagnostics (1):**
 
 | Function | Declared at | Purpose |
 | --- | --- | --- |
-| `CcspHalEthSwGetEthPortStats` | `:1147` | Fills a caller-supplied `CCSP_HAL_ETH_STATS` with one port's counters. |
+| `CcspHalEthSwGetEthPortStats` | `:1222` | Fills a caller-supplied `CCSP_HAL_ETH_STATS` with one port's counters. |
 
 The three callback typedefs a caller implements rather than calls -
 `CcspHalExtSw_ethAssociatedDevice_callback`, `fpEthWanLink_Up` and `fpEthWanLink_Down` - are
