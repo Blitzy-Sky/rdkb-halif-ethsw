@@ -347,7 +347,7 @@ typedef enum _CCSP_HAL_ETHSW_LINK_STATUS
 typedef enum _CCSP_HAL_ETHSW_ADMIN_STATUS {
     CCSP_HAL_ETHSW_AdminUp = 0,   /*!< The port is administratively enabled and permitted to establish a link. */
     CCSP_HAL_ETHSW_AdminDown,     /*!< The port is administratively disabled and will not establish a link. */
-    CCSP_HAL_ETHSW_AdminTest      /*!< The port is in a vendor-defined test mode. This interface does not specify the behaviour of a port in this state, so a caller must not assume it forwards traffic. */ 
+    CCSP_HAL_ETHSW_AdminTest      /*!< The port is in a vendor-defined test mode. This interface does not specify the behaviour of a port in this state, so a caller must not assume it forwards traffic. */
 } CCSP_HAL_ETHSW_ADMIN_STATUS, *PCCSP_HAL_ETHSW_ADMIN_STATUS; /*!< Pointer form of ::CCSP_HAL_ETHSW_ADMIN_STATUS; this is the type of the `pAdminStatus` `[out]` parameter of `CcspHalEthSwGetPortAdminStatus()`. */
 
 /**********************************************************************
@@ -431,10 +431,20 @@ typedef struct _CCSP_HAL_ETH_STATS {
  * @brief Prepares the Ethernet switch and the HAL for use.
  *
  * Sets up the data structures, threads and hardware access that every other
- * function of this interface depends on. A caller invokes this once during
- * bootup and before any other EthSW HAL function; the interface does not define
- * a teardown counterpart, and does not define the effect of calling this
- * function a second time.
+ * function of this interface depends on.
+ *
+ * @pre A caller invokes this once during bootup and before any other function of
+ * this interface, so there is nothing of this interface to call first and no
+ * argument to prepare. What the interface does not define bounds that ordering:
+ * there is no teardown counterpart, and the effect of a second call is not
+ * defined, so a caller neither releases what this call set up nor repeats the
+ * call to recover from anything.
+ * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * @post On `RETURN_OK` the data structures, threads and hardware access named
+ * above are in place, and every other function of this interface may be called.
+ * On `RETURN_ERR` this interface does not define how much of that setup was
+ * done, so a caller treats none of it as available and calls no other function
+ * of this interface.
  *
  * @returns Status of the operation.
  * @retval RETURN_OK - The HAL is initialised and the rest of this interface may
@@ -442,13 +452,12 @@ typedef struct _CCSP_HAL_ETH_STATS {
  * @retval RETURN_ERR - Initialization did not complete. This interface defines
  * one failure value and does not enumerate the conditions that produce it, so
  * the value reports that the call did not succeed and never why; this function
- * takes no argument and states no precondition, so there is nothing in the
- * declaration a caller can re-check on the strength of the value.
+ * takes no argument, so there is nothing in the declaration a caller can
+ * re-check on the strength of the value.
  *
- * @note Error handling: on `RETURN_ERR` a caller must not proceed to any other
- * function of this interface, because none of them is defined without a
- * successful initialisation. The value does not say what failed, so recovery
- * is limited to retrying and reporting the failure.
+ * @note Error handling: the value does not say what failed, so recovery is
+ * limited to retrying the call and reporting the failure; until one succeeds,
+ * the post-condition above governs what a caller may call.
  * @note Blocking: this is the one function of this interface that is documented
  * as able to block, and it may do so while the switch hardware is not yet ready.
  * A caller must not invoke it from a context that cannot tolerate a delay.
@@ -1080,6 +1089,12 @@ INT CcspHalExtSw_setEthWanEnable(BOOLEAN Flag);
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
  * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * @post The hardware configuration is as the call found it: this is a query, it
+ * stores no setting and it changes nothing else in this interface. The returned
+ * value is the call's only output - there is no output parameter and no status
+ * value - so on `TRUE` a caller holds the hardware's WAN configuration as a
+ * fact, and on `FALSE` it holds only the value, for the reason the warning below
+ * gives.
  *
  * @warning This function has no error channel. Its signature admits no status
  * value and no output parameter, so a failed query is indistinguishable from a
@@ -1345,6 +1360,11 @@ void GWP_RegisterEthWan_Callback(appCallBack *obj);
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
  * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * @post The link is as the call found it: this is a query, it stores no setting
+ * and it changes nothing else in this interface. The returned value is the
+ * call's only output - there is no output parameter - so on 1 or 0 the caller
+ * holds the link state, and on a negative value it holds none, because the
+ * state was not determined.
  *
  * @return 1 when the Ethernet WAN link is up, 0 when it is down, and a negative
  * value when the state could not be determined. Only 1 and 0 are meaningful link
