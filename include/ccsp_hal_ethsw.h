@@ -57,26 +57,26 @@
  * from a hardware or communication failure by the return value alone. A caller
  * that needs to tell those cases apart must validate its own arguments before
  * the call and consult the vendor log. Errors are reported synchronously as the
- * return value. [`docs/pages/halSpec.md`, "Internal Error Handling";
+ * return value. [the HAL specification, "Internal Error Handling";
  * `RETURN_OK` and `RETURN_ERR` in this file]
  *
  * @note Threading. This interface is not thread safe: a module invoking it must
- * serialise its own calls. [`docs/pages/halSpec.md`, "Threading Model"]
+ * serialise its own calls. [the HAL specification, "Threading Model"]
  *
  * @note Blocking. Implementations are required to complete synchronously and
  * must not block or suspend the calling thread, because the interface is called
  * from a single-threaded context. `CcspHalEthSwInit()` is the one documented
- * exception. [`docs/pages/halSpec.md`, "Blocking calls" and
+ * exception. [the HAL specification, "Blocking calls" and
  * "Initialization and Startup"]
  *
  * @note Persistence. This interface places no requirement on the vendor
  * implementation to persist any setting across a restart, so a caller must
  * re-apply configuration after re-initialisation rather than assume it
- * survived. [`docs/pages/halSpec.md`, "Persistence Model"]
+ * survived. [the HAL specification, "Persistence Model"]
  *
  * @note Diagnostics. Vendor logging is written to `ethsw_vendor_hal.log` in
  * either `/var/tmp/` or `/rdklogs/logs/`, and the implementation is delivered as
- * the shared library `libhal_ethsw.so`. [`docs/pages/halSpec.md`,
+ * the shared library `libhal_ethsw.so`. [the HAL specification,
  * "Logging and debugging requirements" and "Build Requirements"]
  */
 
@@ -399,23 +399,23 @@ typedef struct _CCSP_HAL_ETH_STATS {
  *
  * - Ordering. `CcspHalEthSwInit()` is called once during bootup and must
  *   precede every other function of this interface.
- *   [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ *   [the HAL specification, "Initialization and Startup"]
  * - Result. A status-returning function reports success as `RETURN_OK` and any
  *   failure as `RETURN_ERR`, synchronously, as its return value. Because that is
  *   the interface's only error value, the cause of a failure cannot be recovered
  *   from the return value; a caller distinguishes an argument mistake from a
  *   hardware fault by validating its own arguments first and otherwise consults
  *   `ethsw_vendor_hal.log`.
- *   [`docs/pages/halSpec.md`, "Internal Error Handling" and
+ *   [the HAL specification, "Internal Error Handling" and
  *   "Logging and debugging requirements"]
  * - Concurrency. This interface is not thread safe, so a caller serialises its
  *   own calls; separate processes may call it concurrently, and the vendor
  *   implementation is required to protect itself against that.
- *   [`docs/pages/halSpec.md`, "Threading Model" and "Process Model"]
+ *   [the HAL specification, "Threading Model" and "Process Model"]
  * - Memory. Storage exchanged across this interface is allocated and released by
  *   the caller, except where a declaration states otherwise;
  *   `CcspHalExtSw_getAssociatedDevice()` is the one such exception.
- *   [`docs/pages/halSpec.md`, "Memory Model"]
+ *   [the HAL specification, "Memory Model"]
  *
  * @{
  */
@@ -439,7 +439,7 @@ typedef struct _CCSP_HAL_ETH_STATS {
  * there is no teardown counterpart, and the effect of a second call is not
  * defined, so a caller neither releases what this call set up nor repeats the
  * call to recover from anything.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the data structures, threads and hardware access named
  * above are in place, and every other function of this interface may be called.
  * On `RETURN_ERR` this interface does not define how much of that setup was
@@ -461,9 +461,9 @@ typedef struct _CCSP_HAL_ETH_STATS {
  * @note Blocking: this is the one function of this interface that is documented
  * as able to block, and it may do so while the switch hardware is not yet ready.
  * A caller must not invoke it from a context that cannot tolerate a delay.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwInit(void); 
 
@@ -487,7 +487,7 @@ INT CcspHalEthSwInit(void);
  * state is written to. Must not be NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` all three outputs have been written. On `RETURN_ERR` this
  * interface does not define whether any of them was written, so a caller treats
  * all three as unset.
@@ -504,9 +504,9 @@ INT CcspHalEthSwInit(void);
  * and that no pointer is NULL, then retries or reports; the return value does not
  * identify the cause.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwGetPortStatus (
     CCSP_HAL_ETHSW_PORT PortId, 
@@ -530,7 +530,7 @@ INT CcspHalEthSwGetPortStatus (
  * configured duplex mode is written to. Must not be NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` both outputs have been written. On `RETURN_ERR` neither is
  * defined and a caller treats both as unset.
  *
@@ -545,9 +545,9 @@ INT CcspHalEthSwGetPortStatus (
  * @note Error handling: as for `CcspHalEthSwGetPortStatus()` - re-check the
  * arguments, then retry or report.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwGetPortCfg (
     CCSP_HAL_ETHSW_PORT PortId, 
@@ -572,7 +572,7 @@ INT CcspHalEthSwGetPortCfg (
  * ::CCSP_HAL_ETHSW_DUPLEX_MODE.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the port is configured for the requested rate and duplex
  * mode. The link itself may still be down, and
  * `CcspHalEthSwGetPortStatus()` may report a different negotiated result. On
@@ -594,9 +594,9 @@ INT CcspHalEthSwGetPortCfg (
  * to ::CCSP_HAL_ETHSW_LINK_Auto and ::CCSP_HAL_ETHSW_DUPLEX_Auto if a specific
  * combination is refused.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwSetPortCfg(
     CCSP_HAL_ETHSW_PORT PortId,
@@ -616,7 +616,7 @@ INT CcspHalEthSwSetPortCfg(
  * administrative state is written to. Must not be NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `*pAdminStatus` has been written; on `RETURN_ERR` it is
  * undefined and a caller treats it as unset.
  *
@@ -632,9 +632,9 @@ INT CcspHalEthSwSetPortCfg(
  * @note Error handling: re-check the arguments, then retry or report; the value
  * does not identify the cause.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwGetPortAdminStatus (
     CCSP_HAL_ETHSW_PORT PortId, 
@@ -656,7 +656,7 @@ INT CcspHalEthSwGetPortAdminStatus (
  * might otherwise assume.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the port is in the requested administrative state, and a
  * subsequent `CcspHalEthSwGetPortAdminStatus()` reports it. On `RETURN_ERR` this
  * interface does not define whether the previous state was retained.
@@ -674,9 +674,9 @@ INT CcspHalEthSwGetPortAdminStatus (
  * @note Error handling: a caller reads the state back with
  * `CcspHalEthSwGetPortAdminStatus()` rather than assuming the port is unchanged.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwSetPortAdminStatus(
     CCSP_HAL_ETHSW_PORT PortId,
@@ -700,7 +700,7 @@ INT CcspHalEthSwSetPortAdminStatus(
  * being rejected.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the port uses the requested aging speed. This interface
  * provides no way to read the value back, so the applied setting cannot be
  * confirmed through it.
@@ -722,9 +722,9 @@ INT CcspHalEthSwSetPortAdminStatus(
  * passed was refused or the change failed for some other reason; it reports
  * the failure and does not retry the same value.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwSetAgingSpeed(CCSP_HAL_ETHSW_PORT PortId, INT AgingSpeed); 
 
@@ -746,7 +746,7 @@ INT CcspHalEthSwSetAgingSpeed(CCSP_HAL_ETHSW_PORT PortId, INT AgingSpeed);
  * not be NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `*port` holds the port the address was found on; on
  * `RETURN_ERR` it is undefined and a caller treats it as unset.
  *
@@ -771,9 +771,9 @@ INT CcspHalEthSwSetAgingSpeed(CCSP_HAL_ETHSW_PORT PortId, INT AgingSpeed);
  * device list with `CcspHalExtSw_getAssociatedDevice()` instead of inferring it
  * here.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwLocatePortByMacAddress(unsigned char *mac, INT *port);
 
@@ -834,7 +834,7 @@ typedef struct _eth_device {
  * NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `*output_array_size` holds the element count and
  * `*output_struct` points to an array the caller now owns. On `RETURN_ERR`
  * neither output is defined: a caller must not read either of them and in
@@ -854,16 +854,16 @@ typedef struct _eth_device {
  * This interface does not state which allocator was used and provides no release
  * function of its own, so the matching deallocator is not established by this
  * contract and a caller must confirm it with the vendor implementation before
- * freeing. [`docs/pages/halSpec.md`, "Memory Model" and
+ * freeing. [the HAL specification, "Memory Model" and
  * "Module Responsibilities"]
  *
  * @note Error handling: on `RETURN_ERR` a caller retries or reports, and must not
  * attempt to release memory it was never given.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls. The
  * returned array is private to the caller that received it, so no locking is
- * needed to read it afterwards. [`docs/pages/halSpec.md`, "Threading Model"]
+ * needed to read it afterwards. [the HAL specification, "Threading Model"]
  */
 INT CcspHalExtSw_getAssociatedDevice(ULONG *output_array_size, eth_device_t **output_struct);
 /** @} */
@@ -919,7 +919,7 @@ typedef INT (*CcspHalExtSw_ethAssociatedDevice_callback)(eth_device_t *eth_dev);
  * not rely on that.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post Association and disassociation events are delivered to `callback_proc`.
  *
  * @execution callback
@@ -930,10 +930,10 @@ typedef INT (*CcspHalExtSw_ethAssociatedDevice_callback)(eth_device_t *eth_dev);
  *
  * @note Blocking: must complete synchronously without blocking the calling
  * thread; it installs a pointer rather than waiting for an event.
- * [`docs/pages/halSpec.md`, "Blocking calls"]
+ * [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls, and in
  * particular must not register from one thread while another is calling this
- * interface. [`docs/pages/halSpec.md`, "Threading Model"]
+ * interface. [the HAL specification, "Threading Model"]
  *
  * @see CcspHalExtSw_ethAssociatedDevice_callback
  */
@@ -966,7 +966,7 @@ void CcspHalExtSw_ethAssociatedDevice_callback_register(CcspHalExtSw_ethAssociat
  * return it to LAN use.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the named interface is in the requested mode. Changing the
  * mode of an interface that is carrying traffic interrupts that traffic.
  *
@@ -994,9 +994,9 @@ void CcspHalExtSw_ethAssociatedDevice_callback_register(CcspHalExtSw_ethAssociat
  * partially reconfigured, so a caller re-reads the WAN state with
  * `CcspHalExtSw_getEthWanEnable()` and `CcspHalExtSw_getEthWanPort()`.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 int CcspHalExtSw_ethPortConfigure(char *ifname, BOOLEAN WanMode);
 
@@ -1014,7 +1014,7 @@ int CcspHalExtSw_ethPortConfigure(char *ifname, BOOLEAN WanMode);
  * NULL.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `*pFlag` has been written; on `RETURN_ERR` it is undefined
  * and a caller treats it as unset rather than as `FALSE`.
  *
@@ -1029,9 +1029,9 @@ int CcspHalExtSw_ethPortConfigure(char *ifname, BOOLEAN WanMode);
  * @note Error handling: a caller must not treat `RETURN_ERR` as "disabled",
  * because the two are different states; it retries or reports instead.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalExtSw_getEthWanEnable(BOOLEAN *pFlag);
 
@@ -1048,12 +1048,12 @@ INT CcspHalExtSw_getEthWanEnable(BOOLEAN *pFlag);
  * value.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the feature is in the requested state and
  * `CcspHalExtSw_getEthWanEnable()` reports it. Changing the state interrupts
  * traffic on the affected port. This interface does not state whether the setting
  * survives a restart, so a caller re-applies it after re-initialisation rather
- * than assuming it persisted. [`docs/pages/halSpec.md`, "Persistence Model"]
+ * than assuming it persisted. [the HAL specification, "Persistence Model"]
  *
  * @returns Status of the operation.
  * @retval RETURN_OK - The requested state was applied.
@@ -1069,9 +1069,9 @@ INT CcspHalExtSw_getEthWanEnable(BOOLEAN *pFlag);
  * `CcspHalExtSw_getEthWanEnable()` rather than assuming the previous state
  * survived, then reports the failure.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalExtSw_setEthWanEnable(BOOLEAN Flag);
 
@@ -1088,7 +1088,7 @@ INT CcspHalExtSw_setEthWanEnable(BOOLEAN Flag);
  * configured for LAN. These are the only two values this function reports.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post The hardware configuration is as the call found it: this is a query, it
  * stores no setting and it changes nothing else in this interface. The returned
  * value is the call's only output - there is no output parameter and no status
@@ -1109,9 +1109,9 @@ INT CcspHalExtSw_setEthWanEnable(BOOLEAN Flag);
  * check and no "not supported" result.
  *
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 BOOLEAN CcspHalExtSw_getCurrentWanHWConf();
 #endif
@@ -1131,7 +1131,7 @@ BOOLEAN CcspHalExtSw_getCurrentWanHWConf();
  * platform instead.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `*pPort` has been written; on `RETURN_ERR` it is undefined
  * and a caller treats it as unset rather than as port 0.
  *
@@ -1147,9 +1147,9 @@ BOOLEAN CcspHalExtSw_getCurrentWanHWConf();
  * failure and present it as the live selection, because the default and the
  * current selection are different facts; it retries or reports instead.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalExtSw_getEthWanPort(UINT *pPort);
 
@@ -1167,12 +1167,12 @@ INT CcspHalExtSw_getEthWanPort(UINT *pPort);
  * rejecting an index the hardware does not have.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the feature is bound to `Port` and
  * `CcspHalExtSw_getEthWanPort()` reports it. Moving the WAN role away from a port
  * that is carrying WAN traffic interrupts that traffic. This interface does not
  * state whether the selection survives a restart, so a caller re-applies it after
- * re-initialisation. [`docs/pages/halSpec.md`, "Persistence Model"]
+ * re-initialisation. [the HAL specification, "Persistence Model"]
  *
  * @returns Status of the operation.
  * @retval RETURN_OK - The port was selected.
@@ -1188,9 +1188,9 @@ INT CcspHalExtSw_getEthWanPort(UINT *pPort);
  * `CcspHalExtSw_getEthWanPort()` rather than assuming the previous value
  * survived, and does not retry the same index after a failure.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalExtSw_setEthWanPort(UINT Port);
 
@@ -1209,7 +1209,7 @@ INT CcspHalExtSw_setEthWanPort(UINT Port);
  * success, so the caller need not pre-clear the structure.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` the structure holds the port's counters as of the call. On
  * `RETURN_ERR` this interface does not define whether any member was written, so
  * a caller discards the whole structure rather than reading part of it.
@@ -1230,9 +1230,9 @@ INT CcspHalExtSw_setEthWanPort(UINT Port);
  * sample is skipped rather than treated as zero, which would otherwise appear as
  * a large negative delta.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT CcspHalEthSwGetEthPortStats(CCSP_HAL_ETHSW_PORT PortId, PCCSP_HAL_ETH_STATS pStats);
 
@@ -1328,7 +1328,7 @@ typedef struct __appCallBack {
  * first, so a caller registers once.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post Ethernet WAN link transitions are delivered to the two functions in
  * `obj`.
  *
@@ -1341,10 +1341,10 @@ typedef struct __appCallBack {
  *
  * @note Blocking: must complete synchronously without blocking the calling
  * thread; it installs pointers rather than waiting for an event.
- * [`docs/pages/halSpec.md`, "Blocking calls"]
+ * [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls, and in
  * particular must not register from one thread while another is calling this
- * interface. [`docs/pages/halSpec.md`, "Threading Model"]
+ * interface. [the HAL specification, "Threading Model"]
  *
  * @see fpEthWanLink_Up
  * @see fpEthWanLink_Down
@@ -1359,7 +1359,7 @@ void GWP_RegisterEthWan_Callback(appCallBack *obj);
  * enabled while the link is down.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post The link is as the call found it: this is a query, it stores no setting
  * and it changes nothing else in this interface. The returned value is the
  * call's only output - there is no output parameter - so on 1 or 0 the caller
@@ -1378,9 +1378,9 @@ void GWP_RegisterEthWan_Callback(appCallBack *obj);
  * retries, and leaves any state that depends on the link unchanged rather than
  * driving it to "down".
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT GWP_GetEthWanLinkStatus();
 
@@ -1404,7 +1404,7 @@ INT GWP_GetEthWanLinkStatus();
  * implementation does not write past its end. Pass the buffer's real size.
  *
  * @pre `CcspHalEthSwInit()` has returned `RETURN_OK`.
- * [`docs/pages/halSpec.md`, "Initialization and Startup"]
+ * [the HAL specification, "Initialization and Startup"]
  * @post On `RETURN_OK` `Interface` holds the interface name. On `RETURN_ERR` this
  * interface does not define whether the buffer was partially written, so a
  * caller discards its contents.
@@ -1435,9 +1435,9 @@ INT GWP_GetEthWanLinkStatus();
  * cannot resize and retry on the strength of the return value alone; it reports
  * the failure and does not treat the buffer as holding a name.
  * @note Blocking: must complete synchronously without blocking the calling
- * thread. [`docs/pages/halSpec.md`, "Blocking calls"]
+ * thread. [the HAL specification, "Blocking calls"]
  * @note Thread safety: not thread safe; a caller serialises its calls.
- * [`docs/pages/halSpec.md`, "Threading Model"]
+ * [the HAL specification, "Threading Model"]
  */
 INT GWP_GetEthWanInterfaceName(unsigned char *Interface, ULONG maxSize);
 

@@ -9,9 +9,17 @@
 | 2024-09-25 | `ETH_5_PORTS` added to the `ETHWAN_DEF_INTF_NUM` ladder (`pri#7`, `RDKCOM-5064`). | 1.1.0 |
 | 2026-08-24 | Specification rewritten to the canonical RDK-B HAL topic set: every declared function named in `API Surface`, the asynchronous notification path corrected, and the unresolved footprint and timeout requirements replaced with explicit statements. Describes the interface at tag `1.1.0`. | 1.1.0 |
 
-**Provenance of this page.** It was renamed from `docs/pages/EthSWHAlSpec.md` to `docs/pages/halSpec.md` in the same change that rewrote it against the canonical topic set. Git records a rename only where the two versions still resemble each other, and a full rewrite does not, so `git log --follow -- docs/pages/halSpec.md` begins at that change: the revisions before it are reached with `git log -- docs/pages/EthSWHAlSpec.md`. That resemblance is measured, and the threshold is 50% by default, so lowering it to git's floor \- `git log --follow -M1% -- docs/pages/halSpec.md` \- is worth trying first: where it pairs the two paths it shows both stretches of history in one listing, and where the rewrite kept too little of the original for git to pair them at any threshold the second command above remains the only route to the earlier revisions.
+**Provenance of this page.** It was renamed from `docs/pages/EthSWHAlSpec.md` to the canonical `docs/pages/` specification page in the same change that rewrote it against the canonical topic set. Git records a rename only where the two versions still resemble each other, and a full rewrite does not, so a `--follow` listing of the canonical path begins at that change, and the revisions before it are reached by listing the legacy path instead:
 
-Dates are taken from `CHANGELOG.md` where it records one. The `1.1.0` entry in that file
+```sh
+git log --follow -- docs/pages/halSpec.md
+git log --follow -M1% -- docs/pages/halSpec.md
+git log -- docs/pages/EthSWHAlSpec.md
+```
+
+That resemblance is measured, and the threshold is 50% by default, so lowering it to git's floor with the second command above is worth trying first: where it pairs the two paths it shows both stretches of history in one listing, and where the rewrite kept too little of the original for git to pair them at any threshold the third command remains the only route to the earlier revisions.
+
+Dates are taken from the repository-root changelog where it records one. The `1.1.0` entry in that file
 carries no date, so the date above is the date of the `1.1.0` tag.
 
 Four version identities exist for this repository and this table deliberately carries only two
@@ -207,8 +215,8 @@ The EthSW HAL is not involved in any of the power management operation.
 ### Asynchronous Notification Model
 
 This interface has two asynchronous notification paths. Both are installed by a registration
-function marked `@execution callback` in the header, and both deliver events that a caller
-would otherwise have to discover by polling.
+function that the header marks with the generator's `execution` alias, value `callback`, and both
+deliver events that a caller would otherwise have to discover by polling.
 
 - `CcspHalExtSw_ethAssociatedDevice_callback_register()` installs a
   `CcspHalExtSw_ethAssociatedDevice_callback`, which the implementation invokes each time a
@@ -390,7 +398,7 @@ no scrubbing helper and no opaque type, so nothing enforces them mechanically:
   inspection or by contract rather than assuming it.
 
 The declaration of `CcspHalEthSwLocatePortByMacAddress` in
-[`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h) carries the same rule as a `@warning` on its
+`ccsp_hal_ethsw.h` carries the same rule as a `@warning` on its
 `mac` argument, so a reader of the generated API reference is bound by it without having to reach
 this page.
 
@@ -418,7 +426,7 @@ review of the topics that cite it: a change to `ccsp_hal_ethsw.h` obliges a revi
 `Asynchronous Notification Model`, `Internal Error Handling`, `Memory Model`,
 `Logging and debugging requirements`, `Platform or Product Customization`,
 `Data Structures and Defines`, `API Surface`, `Sequence Diagram` and `State Diagram`; a change to
-`CHANGELOG.md` or to the repository's tags
+the repository-root changelog or to the repository's tags
 obliges a review of `Version History`; and a change to `docs/generate_docs.sh` obliges a review
 of `Build Requirements` and `Platform or Product Customization`. The reviewer for this
 repository is the `CODEOWNERS` group `@rdkcentral/rdkb-hal-advisory`, which owns every path
@@ -465,6 +473,19 @@ by its own build configuration. The two feature macros described under
 `Platform or Product Customization` are the only compile-time variability this header itself
 exposes, and they select which declarations exist rather than identifying a version.
 
+Those same two macros decide what the generated documentation for this repository contains.
+`docs/generate_docs.sh` names `FEATURE_RDKB_WAN_MANAGER` and `FEATURE_RDKB_AUTO_PORT_SWITCH` in a
+`DOXYGEN_EXTRA_PARAMS` value, and the generator version this repository pins does not read that
+variable: its documentation target runs the documentation tool against a configuration whose
+`PREDEFINED` list is empty. The script therefore applies the setting itself, by the mechanism
+`Platform or Product Customization` describes, so the documentation build does define both macros
+and the generated API reference documents the full twenty-function surface \-
+`CcspHalExtSw_ethPortConfigure()` and `CcspHalExtSw_getCurrentWanHWConf()`, both named by this
+specification under `Optional Components` and `API Surface` and both declared by the header, appear
+among its documented functions alongside the other eighteen. What the generated reference publishes
+is a property of how the site is built rather than of any one product, so the header remains the
+authority on what a given build declares.
+
 ### Platform or Product Customization
 
 The product can be configured via the following compile time defines:
@@ -478,10 +499,15 @@ These two macros change the interface itself rather than only the implementation
 recorded under `Optional Components`: `CcspHalExtSw_ethPortConfigure()` is declared only when
 both are defined, and `CcspHalExtSw_getCurrentWanHWConf()` only when
 `FEATURE_RDKB_AUTO_PORT_SWITCH` is defined. A product that defines neither has an interface of
-eighteen functions rather than twenty. `docs/generate_docs.sh` passes
-`PREDEFINED='FEATURE_RDKB_WAN_MANAGER=1 FEATURE_RDKB_AUTO_PORT_SWITCH=1'` to the generator, so
-the generated site documents the full twenty-function surface whether or not a given product
-builds it.
+eighteen functions rather than twenty. `docs/generate_docs.sh` predefines both macros for the
+documentation build, as `PREDEFINED = FEATURE_RDKB_WAN_MANAGER=1 FEATURE_RDKB_AUTO_PORT_SWITCH=1`
+in Doxygen configuration syntax, so the generated site documents the full twenty-function surface
+whether or not a given product builds it. The pinned generator does not forward that setting into
+its own Doxygen invocation, so the script applies it by placing a wrapper named `doxygen` ahead of
+the real one on `PATH` for the duration of the build; the wrapper appends the setting to the
+configuration the generator hands to Doxygen and is removed when the script exits. A product build
+is unaffected by any of this: predefining a macro for documentation extraction changes what the
+generated reference publishes and nothing about what a product compiles.
 
 A second compile-time customization selects the default Ethernet WAN interface index. The
 header sets `ETHWAN_DEF_INTF_NUM` from the first matching hardware-configuration macro:
@@ -520,7 +546,7 @@ be rejected by a port that does not support it.
 
 ### Theory of operation and key concepts
 
-This document and the [`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h) header file define
+This document and the `ccsp_hal_ethsw.h` header file define
 the interface and functionality of the Ethernet Switch Hardware Abstraction Layer (HAL) within
 the RDK-B framework. The header is the authority on what the interface is: it carries the
 declarations, the types a caller constructs or interprets, and a per-function contract stating
@@ -636,7 +662,7 @@ reports the feature setting, `GWP_GetEthWanLinkStatus()` reports the live link, 
 ### Data Structures and Defines
 
 All type and macro definitions are declared in
-[`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h), which documents each member. The tables
+`ccsp_hal_ethsw.h`, which documents each member. The tables
 below list what a caller must construct or interpret, with the line in that header on which each
 name is defined.
 
@@ -692,7 +718,7 @@ caller treats them as spellings of the underlying C types rather than as distinc
 ### API Surface
 
 Twenty functions are declared, all in
-[`ccsp_hal_ethsw.h`](../../include/ccsp_hal_ethsw.h), which carries the full per-function
+[ccsp_hal_ethsw.h](../../include/ccsp_hal_ethsw.h), which carries the full per-function
 contract for each: argument ranges, pre-conditions, post-conditions, every return value with
 the reason it occurs, and the caller's recovery action. The groups below cover the entire
 interface and nothing outside it.
