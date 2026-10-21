@@ -23,11 +23,9 @@
 - `MoCA` \- Multimedia over Coax Alliance
 - `QoS` \- Quality of Service
 - `RDK-B` \- Reference Design Kit for Broadband
-- `SLA` \- Service Level Agreement
 - `SoC` \- System on Chip
 - `VLAN` \- Virtual Local Area Network
 - `WAN` \- Wide Area Network
-- `WLAN` \- Wireless Local Area Network
 
 ## Description
 
@@ -47,7 +45,7 @@ behind it. A caller works in terms of port identifiers, link rates, duplex modes
 administrative states and counters, and the same call sequence produces the same result on any
 product whose vendor implements the contract.
 
-**Scope of this interface.** The contract is the twenty functions listed under `API Surface`:
+**Scope of this interface:** The contract is the twenty functions listed under `API Surface`:
 initialisation, port status and configuration, forwarding-table maintenance, connected-device
 enumeration with its notification callback, Ethernet WAN selection, provisioning and link
 events, and per-port statistics. `VLAN` management, `QoS` and `DSCP` priority, `ACL`, bridging,
@@ -79,12 +77,12 @@ of this interface.
 
 That call binds a caller as follows:
 
-- **Mandatory initialization**: every other function of this interface may be called only
+- **Mandatory initialization:** every other function of this interface may be called only
   after `CcspHalEthSwInit()` has returned `RETURN_OK`. On `RETURN_ERR` a caller calls no other
   function, and retries the call or reports the failure.
-- **Blocking behaviour**: `CcspHalEthSwInit()` may block while the Ethernet switch hardware is
+- **Blocking behaviour:** `CcspHalEthSwInit()` may block while the Ethernet switch hardware is
   not yet ready, so a caller must not invoke it from a context that cannot tolerate a delay.
-- **No teardown counterpart**: there is no de-initialization function to call at shutdown, and
+- **No teardown counterpart:** there is no de-initialization function to call at shutdown, and
   a caller must not repeat `CcspHalEthSwInit()` to reset the HAL.
 
 Third party vendors will implement appropriately to meet operational requirements, taking the
@@ -172,10 +170,10 @@ A caller using either path:
 
 ### Blocking calls
 
-**Synchronous and Responsive**: All APIs within this module should operate synchronously and
+**Synchronous and Responsive:** All APIs within this module should operate synchronously and
 complete within a reasonable timeframe based on the complexity of the operation.
 
-**Non-Blocking Requirement**: Given the single-threaded environment in which these APIs will be
+**Non-Blocking Requirement:** Given the single-threaded environment in which these APIs will be
 called, it is imperative that they do not block or suspend execution of the main thread.
 Implementations must avoid long-running operations or utilize asynchronous mechanisms where
 necessary to maintain responsiveness. The two registration functions install a callback and
@@ -217,21 +215,9 @@ All HAL components must adhere to a consistent logging process. When logging is 
 should be performed into the `ethsw_vendor_hal.log` file, which is located in either the
 `/var/tmp/` or `/rdklogs/logs/` directories.
 
-Logs must be categorized according to the following log levels, as defined by the Linux
-standard logging system, listed here in descending order of severity:
-
-- **FATAL**: Critical conditions, typically indicating system crashes or severe failures that
-  require immediate attention.
-- **ERROR**: Non-fatal error conditions that nonetheless significantly impede normal operation.
-- **WARNING**: Potentially harmful situations that do not yet represent errors.
-- **NOTICE**: Important but not error-level events.
-- **INFO**: General informational messages that highlight system operations.
-- **DEBUG**: Detailed information typically useful only when diagnosing problems.
-- **TRACE**: Very fine-grained logging to trace the internal flow of the system.
-
-Each log entry should include a timestamp, the log level, and a message describing the event or
-condition. This standard format will facilitate easier parsing and analysis of log files across
-different vendors and components.
+Log levels follow the Linux standard logging system, in descending order of severity: `FATAL`,
+`ERROR`, `WARNING`, `NOTICE`, `INFO`, `DEBUG` and `TRACE`. Each log entry carries a timestamp, the
+log level and a message describing the event or condition.
 
 Implementations must not log credentials, secrets, security-sensitive information, or other sensitive data.
 Sensitive data includes personal data such as client device addresses. The rule applies at every
@@ -246,21 +232,18 @@ specifications.
 
 ### Quality Control
 
-To ensure the highest quality and reliability, it is strongly recommended that third-party
-quality assurance tools like `Coverity`, `Black Duck`, and `Valgrind` be employed to thoroughly
-analyze the implementation. The goal is to detect and resolve potential issues such as memory
-leaks, memory corruption, or other defects before deployment.
-
-Furthermore, both the HAL wrapper and any third-party software interacting with it must
-prioritize robust memory management practices. This includes meticulous allocation,
-deallocation, and error handling to guarantee a stable and leak-free operation.
+An implementation should pass analysis with third-party tools such as `Coverity`, `Black Duck`
+and `Valgrind` without reported issues. Neither the HAL implementation nor the vendor software
+beneath it may introduce memory leaks or memory corruption.
 
 Any change to a file listed under `Source References` obliges a review of this document by the
-repository's `CODEOWNERS` group, `@rdkcentral/rdkb-hal-advisory`.
+repository's code owner, `@rdkcentral/rdkb-hal-advisory`.
 
 ### Licensing
 
-The implementation is expected to be released under the Apache License 2.0.
+The interface definition is licensed under the Apache License 2.0, with the full text in `LICENSE`
+and the attribution notice in `NOTICE`. An implementation of this interface is expected to be
+released under the Apache License 2.0.
 
 ### Build Requirements
 
@@ -270,23 +253,20 @@ distribution environment. The recipe should deliver a shared library named as
 
 To use this interface:
 
-1. Components/Process must include `ccsp_hal_ethsw.h` to make use of ethsw hal capabilities.
+1. Components/Process must include `ccsp_hal_ethsw.h` to make use of EthSW HAL capabilities.
 2. Components/Process should add linker dependency for `libhal_ethsw.so`.
 
 ### Variability Management
 
-The role of adjusting the interface, guided by versioning, rests solely within architecture
-requirements. Thereafter, vendors are obliged to align their implementation with a designated
-version of the interface. As per Service Level Agreement (SLA) terms, they may transition to
-newer versions based on demand needs.
+Changes to the interface are controlled by versioning. Vendors implement a designated version of
+the interface and move to later versions as their service agreements require. Each interface
+version follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), and vendor code
+complies with a specific version.
 
-Each API interface will be versioned using [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
-the vendor code will comply with a specific version of the interface.
-
-That versioning is carried by the repository's release tags; this document describes `1.1.0`.
-Code that must behave differently across revisions takes the revision from its own build
-configuration. The macros under `Platform or Product Customization` select which declarations
-exist and do not identify a version.
+The interface version is identified by the repository's release tag; this document describes
+release `1.1.0`. Code that must behave differently across revisions takes the revision from its
+own build configuration. The macros under `Platform or Product Customization` select which
+declarations exist and do not identify a version.
 
 ### Platform or Product Customization
 
@@ -336,7 +316,7 @@ function.
 
 Two concepts run through the whole interface and are easy to get wrong.
 
-**A port is identified in several unrelated numbering schemes.** The switch ports that
+**A port is identified in several unrelated numbering schemes:** The switch ports that
 `CcspHalEthSwGetPortStatus()`, `CcspHalEthSwGetPortCfg()`, `CcspHalEthSwSetPortCfg()`,
 `CcspHalEthSwGetPortAdminStatus()`, `CcspHalEthSwSetPortAdminStatus()`,
 `CcspHalEthSwSetAgingSpeed()` and `CcspHalEthSwGetEthPortStats()` act on are named by the
@@ -350,7 +330,7 @@ The `eth_port` member of `eth_device_t` and the port number
 that expects another, and establishes the meaning of a located port number or a reported
 `eth_port` with the vendor implementation before acting on it.
 
-**An administrative state and a link state are independent facts.** The administrative state is
+**An administrative state and a link state are independent facts:** The administrative state is
 what an operator requested, read with `CcspHalEthSwGetPortAdminStatus()` and set with
 `CcspHalEthSwSetPortAdminStatus()`. The link state is what the hardware currently has, read
 with `CcspHalEthSwGetPortStatus()`. A port can be administratively up while its link is down,
@@ -361,56 +341,56 @@ reports the feature setting, `GWP_GetEthWanLinkStatus()` reports the live link, 
 
 #### Object Lifecycles
 
-- **No created objects**: the HAL manipulates the state and configuration of Ethernet switch
+- **No created objects:** the HAL manipulates the state and configuration of Ethernet switch
   hardware that already exists, and identifies what to act on by parameter: a
   `CCSP_HAL_ETHSW_PORT` enumerator, an Ethernet WAN port index, or a MAC address. Those
   identifiers are properties of the hardware, not handles this interface issues.
-- **Storage**: ownership follows `Memory Model`; `CcspHalExtSw_getAssociatedDevice()` makes the
+- **Storage:** ownership follows `Memory Model`; `CcspHalExtSw_getAssociatedDevice()` makes the
   one HAL allocation, which the caller releases.
-- **Interface lifetime**: the interface stays open from a successful `CcspHalEthSwInit()` for
+- **Interface lifetime:** the interface stays open from a successful `CcspHalEthSwInit()` for
   the life of the process, and a caller keeps its registered callbacks callable for the same
   period, as `Initialization and Startup` and `Asynchronous Notification Model` state.
 
 #### Method Sequencing
 
-- **Initialization first**: every sequence below starts after the successful initialization that
+- **Initialization first:** every sequence below starts after the successful initialization that
   `Initialization and Startup` requires.
-- **Registration before the events matter**: install the association callback and the Ethernet
+- **Registration before the events matter:** install the association callback and the Ethernet
   WAN link callbacks after initialization and before the caller depends on being notified,
   because events that occur before registration are not replayed.
-- **Select, then enable, for Ethernet WAN**: `CcspHalExtSw_setEthWanEnable()` acts on the port
+- **Select, then enable, for Ethernet WAN:** `CcspHalExtSw_setEthWanEnable()` acts on the port
   that `CcspHalExtSw_getEthWanPort()` reports, so a caller that wants a specific port calls
   `CcspHalExtSw_setEthWanPort()` first. Where the automatic port-switch feature is built,
   `CcspHalExtSw_ethPortConfigure()` performs the equivalent change by interface name instead of
   by index.
-- **Read back rather than assume**: after a failed `CcspHalExtSw_setEthWanEnable()` or
+- **Read back rather than assume:** after a failed `CcspHalExtSw_setEthWanEnable()` or
   `CcspHalExtSw_ethPortConfigure()` the change may have been partially applied, so a caller
   re-reads the state with `CcspHalExtSw_getEthWanEnable()` and `CcspHalExtSw_getEthWanPort()`.
   An aging speed set with `CcspHalEthSwSetAgingSpeed()` has no getter, so a caller records the
   value it set.
-- **Otherwise unordered**: the remaining getters and setters may be called in any order after
+- **Otherwise unordered:** the remaining getters and setters may be called in any order after
   initialization, subject to the serialization `Threading Model` requires.
 
 #### State-Dependent Behavior
 
-- **Port existence**: a port-scoped call is meaningful only for a port the product implements,
+- **Port existence:** a port-scoped call is meaningful only for a port the product implements,
   so a caller handles `RETURN_ERR` for a valid `CCSP_HAL_ETHSW_PORT` enumerator on hardware
   that has no such port, and for a link rate the port does not support.
   `CCSP_HAL_ETHSW_PortMax` is a count and sentinel rather than a port, and passing it is an
   invalid argument.
-- **Link state**: `CcspHalEthSwGetPortStatus()` reports what a port has negotiated, which is
+- **Link state:** `CcspHalEthSwGetPortStatus()` reports what a port has negotiated, which is
   not necessarily what it was configured for. `CcspHalEthSwGetPortCfg()` reports the
   configuration. With `CCSP_HAL_ETHSW_LINK_Auto` or `CCSP_HAL_ETHSW_DUPLEX_Auto` configured, a
   read returns the negotiated rate or mode once a link is up rather than the `Auto` value.
-- **Administrative state**: a port in `CCSP_HAL_ETHSW_AdminDown` will not establish a link.
+- **Administrative state:** a port in `CCSP_HAL_ETHSW_AdminDown` will not establish a link.
   `CCSP_HAL_ETHSW_AdminTest` is a vendor-defined test mode, so a caller must not assume a port
   in that state forwards traffic.
-- **Learned addresses**: `CcspHalEthSwLocatePortByMacAddress()` searches the switch's MoCA and
+- **Learned addresses:** `CcspHalEthSwLocatePortByMacAddress()` searches the switch's MoCA and
   Ethernet address tables, so it can only find an address the switch has already learned, and an
   idle or newly attached device may be absent. A caller that needs to tell an absent address
   from a failed lookup re-reads the device list with `CcspHalExtSw_getAssociatedDevice()`.
   `CcspHalEthSwSetAgingSpeed()` governs how long a learned address is kept.
-- **Counters**: the values in `CCSP_HAL_ETH_STATS` reflect the traffic a port has carried, in
+- **Counters:** the values in `CCSP_HAL_ETH_STATS` reflect the traffic a port has carried, in
   bytes or packets as each member name states. A caller computing a rate differences two
   samples over its own elapsed time and tolerates a counter that wraps or restarts.
 
@@ -437,11 +417,11 @@ tables below list what a caller constructs or interprets.
 | `eth_device_t` | One device observed on a switch port, as reported by `CcspHalExtSw_getAssociatedDevice()` and by the association callback: `eth_devMacAddress` (6 binary octets), `eth_port` (vendor-defined numbering, not a `CCSP_HAL_ETHSW_PORT` enumerator), `eth_vlanid` (1 to 4094, reported for information only), `eth_devTxRate` and `eth_devRxRate` (vendor-defined unit, not comparable across implementations), and `eth_Active` (`TRUE` while present, and the member that distinguishes an association from a disassociation). Writing to a received structure changes nothing in the switch. |
 | `appCallBack` | The pair of Ethernet WAN link callbacks a caller fills in and passes to `GWP_RegisterEthWan_Callback()`: `pGWP_act_EthWanLinkUP` and `pGWP_act_EthWanLinkDown`. |
 
-**Pointer typedefs**, each declared with its base type and used as the `[out]` parameter form:
+**Pointer typedefs:** each declared with its base type and used as the `[out]` parameter form:
 `PCCSP_HAL_ETHSW_PORT`, `PCCSP_HAL_ETHSW_LINK_RATE`, `PCCSP_HAL_ETHSW_DUPLEX_MODE`,
 `PCCSP_HAL_ETHSW_LINK_STATUS`, `PCCSP_HAL_ETHSW_ADMIN_STATUS` and `PCCSP_HAL_ETH_STATS`.
 
-**Callback typedefs**, each with the function that installs it:
+**Callback typedefs:** each with the function that installs it:
 
 | Callback typedef | Installed by |
 | --- | --- |
@@ -585,21 +565,21 @@ notifications under `Asynchronous Notification Model`.
 
 The state values a caller can observe are these:
 
-- **Port link state** \- `CCSP_HAL_ETHSW_LINK_STATUS` from `CcspHalEthSwGetPortStatus()`:
+- **Port link state:** `CCSP_HAL_ETHSW_LINK_STATUS` from `CcspHalEthSwGetPortStatus()`:
   `CCSP_HAL_ETHSW_LINK_Up`, `CCSP_HAL_ETHSW_LINK_Down`, `CCSP_HAL_ETHSW_LINK_Disconnected`.
-- **Port administrative state** \- `CCSP_HAL_ETHSW_ADMIN_STATUS` from
+- **Port administrative state:** `CCSP_HAL_ETHSW_ADMIN_STATUS` from
   `CcspHalEthSwGetPortAdminStatus()`: `CCSP_HAL_ETHSW_AdminUp`, `CCSP_HAL_ETHSW_AdminDown`,
   `CCSP_HAL_ETHSW_AdminTest`. Set with `CcspHalEthSwSetPortAdminStatus()`.
-- **Negotiated and configured port settings** \- `CCSP_HAL_ETHSW_LINK_RATE` and
+- **Negotiated and configured port settings:** `CCSP_HAL_ETHSW_LINK_RATE` and
   `CCSP_HAL_ETHSW_DUPLEX_MODE` from `CcspHalEthSwGetPortStatus()` and
   `CcspHalEthSwGetPortCfg()`. `CCSP_HAL_ETHSW_LINK_NULL` reports that no link is established.
-- **Ethernet WAN feature setting** \- the `BOOLEAN` from `CcspHalExtSw_getEthWanEnable()`,
+- **Ethernet WAN feature setting:** the `BOOLEAN` from `CcspHalExtSw_getEthWanEnable()`,
   changed by `CcspHalExtSw_setEthWanEnable()`.
-- **Ethernet WAN link state** \- the 1, 0 or negative result of `GWP_GetEthWanLinkStatus()`.
-- **Ethernet WAN hardware configuration** \- the `BOOLEAN` from
+- **Ethernet WAN link state:** the 1, 0 or negative result of `GWP_GetEthWanLinkStatus()`.
+- **Ethernet WAN hardware configuration:** the `BOOLEAN` from
   `CcspHalExtSw_getCurrentWanHWConf()` where that function is built, `TRUE` for WAN and `FALSE`
   for LAN.
-- **Device presence** \- `eth_Active` in each `eth_device_t` from
+- **Device presence:** `eth_Active` in each `eth_device_t` from
   `CcspHalExtSw_getAssociatedDevice()` or from an association callback.
 
 ## Source References
@@ -608,4 +588,5 @@ The state values a caller can observe are these:
 - [rdkcentral/rdkb-halif-ethsw/CHANGELOG.md](https://github.com/rdkcentral/rdkb-halif-ethsw/blob/develop/CHANGELOG.md) — release history behind `Version History`
 - [rdkcentral/rdkb-halif-ethsw/docs/generate_docs.sh](https://github.com/rdkcentral/rdkb-halif-ethsw/blob/develop/docs/generate_docs.sh) — documentation build, including the feature-macro predefinition
 - [rdkcentral/rdkb-halif-ethsw/LICENSE](https://github.com/rdkcentral/rdkb-halif-ethsw/blob/develop/LICENSE) — Apache License 2.0
+- [rdkcentral/rdkb-halif-ethsw/NOTICE](https://github.com/rdkcentral/rdkb-halif-ethsw/blob/develop/NOTICE) — attribution notice named under `Licensing`
 - [rdkcentral/rdkb-halif-ethsw/.github/CODEOWNERS](https://github.com/rdkcentral/rdkb-halif-ethsw/blob/develop/.github/CODEOWNERS) — review ownership named under `Quality Control`
