@@ -35,10 +35,9 @@ The diagram below describes a high-level software architecture of the EthSW HAL 
 
 ```mermaid
 flowchart TD
-    Stack[RDK-B Stack] <--> Caller["CcspPandMSsp / CcspEthAgent"]
-    Caller <--> HAL["EthSW HAL - ccsp_hal_ethsw.h"]
-    HAL <--> Vendor["Vendor Software - libhal_ethsw.so"]
-    Vendor <--> Switch[Ethernet switch hardware]
+    Caller["CcspPandMSsp / CcspEthAgent"] <--> HAL["EthSW HAL - ccsp_hal_ethsw.h"]
+    HAL <--> Vendor["Vendor Software"]
+    Vendor <--> Hardware["Ethernet switch hardware"]
 ```
 
 The Ethernet Switch Hardware Abstraction Layer, `ccsp_hal_ethsw`, is the interface through
