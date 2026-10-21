@@ -118,12 +118,16 @@ returns and the caller releases it.
 
 #### Caller Responsibilities
 
-- Allocate every `[out]` structure and buffer before the call, and release it afterwards.
+- Allocate every `[out]` structure and buffer before the call, and release it only once the
+  implementation's use of it has ended: the `CCSP_HAL_ETH_STATS` passed to
+  `CcspHalEthSwGetEthPortStats()` and the `GWP_GetEthWanInterfaceName()` buffer stay allocated
+  and unmoved after the call returns.
 - Keep every `[in]` buffer valid for the duration of the call, and keep a registered
   `appCallBack` valid for as long as notifications are wanted.
 - Pass no NULL pointer where a parameter is required.
-- Zero-fill the `GWP_GetEthWanInterfaceName()` buffer before the call and pass its real size as
-  `maxSize`.
+- Size the `GWP_GetEthWanInterfaceName()` buffer to the capacity established with the vendor
+  implementation (see `Platform or Product Customization`), zero-fill it before the call, and
+  pass its real size as `maxSize`.
 - Release the `eth_device_t` array returned by `CcspHalExtSw_getAssociatedDevice()` with the
   deallocator the vendor implementation documents. On `RETURN_ERR` there is no array to
   release.
@@ -182,16 +186,9 @@ return without waiting for an event.
 
 ### Internal Error Handling
 
-**Synchronous Error Handling**: All APIs must return errors synchronously as a return value.
-This ensures immediate notification of errors to the caller.
-
-**Internal Error Reporting**: The HAL is responsible for reporting any internal system errors
-(e.g., out-of-memory conditions) through the return value.
-
-**Focus on Logging for Errors**: For system errors, the HAL should prioritize logging the error
-details for further investigation and resolution.
-
-The return values a caller acts on:
+Every function except the two `void` registration functions (see
+`Asynchronous Notification Model`) reports its result synchronously in its return value, which
+a caller acts on as follows:
 
 | Function | Return value | Caller action |
 | --- | --- | --- |
@@ -322,9 +319,10 @@ compiled. A caller that needs a different Ethernet WAN port calls `CcspHalExtSw_
 which changes the selected port and leaves the compile-time default unchanged.
 
 `ETHWAN_INTERFACE_NAME_MAX_LENGTH`, value 32, is guarded, so a product can define it before
-including the header. A caller sizes the `GWP_GetEthWanInterfaceName()` buffer to it. That
-function's documentation also describes a 64-byte minimum and an 11-to-262-byte `maxSize`
-range, so a caller that needs a longer name confirms the bound with the vendor implementation.
+including the header. The `GWP_GetEthWanInterfaceName()` contract also describes a buffer of
+at least 64 bytes and a `maxSize` of 11 to 262 bytes. The three figures do not agree, so none
+of them is a size that is safe for every implementation: a caller establishes the effective
+buffer capacity and the `maxSize` values the vendor implementation accepts before use.
 
 ## Interface API Documentation
 
@@ -376,8 +374,8 @@ reports the feature setting, `GWP_GetEthWanLinkStatus()` reports the live link, 
 
 #### Method Sequencing
 
-- **Initialization first**: `CcspHalEthSwInit()` must return `RETURN_OK` before any other
-  function of this interface is called.
+- **Initialization first**: every sequence below starts after the successful initialization that
+  `Initialization and Startup` requires.
 - **Registration before the events matter**: install the association callback and the Ethernet
   WAN link callbacks after initialization and before the caller depends on being notified,
   because events that occur before registration are not replayed.
