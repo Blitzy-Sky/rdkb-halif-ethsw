@@ -1,1 +1,1 @@
-docs/pages/EthSWHAlSpec.md
+docs/pages/halSpec.md
