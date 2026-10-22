@@ -543,19 +543,16 @@ sequenceDiagram
     HAL->>Vendor: move the selected port to WAN use
     Vendor-->>HAL: port reconfigured, traffic interrupted
     HAL-->>Caller: RETURN_OK
-    Vendor-->>HAL: device appeared on a switch port
+    Vendor->>HAL: device appeared on a switch port
     HAL->>Caller: CcspHalExtSw_ethAssociatedDevice_callback(eth_dev)
     Caller-->>HAL: RETURN_OK, fields copied before returning
-    Vendor-->>HAL: Ethernet WAN link came up
+    Vendor->>HAL: Ethernet WAN link came up
     HAL->>Caller: fpEthWanLink_Up() through pGWP_act_EthWanLinkUP
     Caller->>HAL: GWP_GetEthWanLinkStatus()
     HAL->>Vendor: read the live Ethernet WAN link state
     Vendor-->>HAL: link is up
     HAL-->>Caller: 1
 ```
-
-The diagrams in this document are fenced `mermaid` blocks: they render on GitHub, through the
-repository's `README.md`, and appear as source text in the generated HTML.
 
 ### State Diagram
 
